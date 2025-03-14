@@ -122,6 +122,11 @@ if(PRESTO_ENABLE_REMOTE_FUNCTIONS)
   target_link_libraries(presto_server_lib presto_server_remote_function)
 endif()
 
+# if(PRESTO_ENABLE_TABLE_FUNCTIONS) add_subdirectory(tvf)
+add_subdirectory(tvf)
+target_link_libraries(presto_server_lib presto_tvf_exec presto_tvf_functions)
+# endif()
+
 set_property(TARGET presto_server PROPERTY JOB_POOL_LINK presto_link_job_pool)
 
 if(PRESTO_ENABLE_TESTING)
