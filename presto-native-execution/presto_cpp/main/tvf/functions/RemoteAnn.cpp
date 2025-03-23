@@ -42,7 +42,8 @@ class RemoteAnn : public TableFunction {
 void registerRemoteAnn(const std::string& name) {
   registerTableFunction(
       name,
-      TableFunction::Metadata::defaultMetadata(),
+      {},
+      std::make_shared<GenericTableReturnType>(),
       [](const std::unordered_map<std::string, std::shared_ptr<Argument>>& args,
          const velox::core::QueryConfig& /*queryConfig*/)
           -> std::unique_ptr<TableFunctionAnalysis> {

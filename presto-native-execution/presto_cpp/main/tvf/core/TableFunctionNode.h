@@ -26,7 +26,7 @@ class TableFunctionNode : public velox::core::PlanNode {
   TableFunctionNode(
       velox::core::PlanNodeId id,
       const std::string& name,
-      std::shared_ptr<const TableFunctionHandle> handle,
+      TableFunctionHandlePtr handle,
       velox::RowTypePtr outputType,
       RequiredColumnsMap requiredColumns,
       velox::core::PlanNodePtr source);
@@ -74,7 +74,7 @@ class TableFunctionNode : public velox::core::PlanNode {
 
   const std::string functionName_;
 
-  const std::shared_ptr<const TableFunctionHandle> handle_;
+  TableFunctionHandlePtr handle_;
 
   const velox::RowTypePtr outputType_;
 

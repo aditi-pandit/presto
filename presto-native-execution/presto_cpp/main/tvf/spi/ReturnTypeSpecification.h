@@ -15,16 +15,47 @@
  */
 #pragma once
 
+#include "presto_cpp/main/tvf/spi/Descriptor.h"
+
 namespace facebook::presto::tvf {
 
-struct ReturnSpec {
-  enum class ReturnTypeSpec {
-    kGenericTable,
-    kOnlyPassthrough,
-    kDescribedTable
-  };
+class ReturnTypeSpecification {
+ public:
+  enum class ReturnType { kGenericTable, kDescribedTable };
 
-  ReturnTypeSpec returnType;
+  ReturnTypeSpecification(ReturnType returnType) : returnType_(returnType){};
+
+  ReturnType returnType() const {
+    return returnType_;
+  }
+
+  virtual ~ReturnTypeSpecification() = default;
+
+ private:
+  ReturnType returnType_;
+};
+using ReturnSpecPtr = std::shared_ptr<ReturnTypeSpecification>;
+
+class GenericTableReturnType : public ReturnTypeSpecification {
+ public:
+  GenericTableReturnType()
+      : ReturnTypeSpecification(
+            ReturnTypeSpecification::ReturnType::kGenericTable){};
+};
+
+class DescribedTableReturnType : public ReturnTypeSpecification {
+ public:
+  DescribedTableReturnType(DescriptorPtr descriptor)
+      : ReturnTypeSpecification(
+            ReturnTypeSpecification::ReturnType::kDescribedTable),
+        descriptor_(std::move(descriptor)) {}
+
+  const DescriptorPtr descriptor() const {
+    return descriptor_;
+  }
+
+ private:
+  DescriptorPtr descriptor_;
 };
 
 } // namespace facebook::presto::tvf

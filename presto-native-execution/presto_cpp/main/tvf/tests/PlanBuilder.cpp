@@ -24,15 +24,35 @@ addTvfNode(
     const std::string& name,
     const std::unordered_map<std::string, std::shared_ptr<Argument>>& args) {
   return [&name, &args](PlanNodeId nodeId, PlanNodePtr source) -> PlanNodePtr {
+    // Validate the user has provided all required arguments.
+    auto argsList = getTableFunctionArgumentSpecs(name);
+    for (const auto arg : argsList) {
+      if (arg->required()) {
+        VELOX_CHECK_GT(args.count(arg->name()), 0);
+      }
+    }
+
     QueryConfig c{{}};
     auto analysis = TableFunction::analyze(name, args, c);
     VELOX_CHECK(analysis);
     VELOX_CHECK(analysis->tableFunctionHandle());
-    VELOX_CHECK(analysis->returnType());
 
-    std::vector<std::string> names = analysis->returnType()->names();
-    std::vector<velox::TypePtr> types = analysis->returnType()->types();
-    auto outputType = velox::ROW(std::move(names), std::move(types));
+    RowTypePtr outputType;
+    auto returnTypeSpec = getTableFunctionReturnType(name);
+    if (returnTypeSpec->returnType() ==
+        ReturnTypeSpecification::ReturnType::kGenericTable) {
+      VELOX_CHECK(analysis->returnType());
+
+      auto names = analysis->returnType()->names();
+      auto types = analysis->returnType()->types();
+      outputType = velox::ROW(std::move(names), std::move(types));
+    } else {
+      auto describedTableSpec =
+          std::dynamic_pointer_cast<DescribedTableReturnType>(returnTypeSpec);
+      auto names = describedTableSpec->descriptor()->names();
+      auto types = describedTableSpec->descriptor()->types();
+      outputType = velox::ROW(std::move(names), std::move(types));
+    }
 
     return std::make_shared<TableFunctionNode>(
         nodeId,

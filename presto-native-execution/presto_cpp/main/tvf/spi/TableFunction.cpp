@@ -42,21 +42,35 @@ std::optional<const TableFunctionEntry*> getTableFunctionEntry(
 
 bool registerTableFunction(
     const std::string& name,
-    TableFunction::Metadata metadata,
+    TableArgumentSpecList argumentsSpec,
+    ReturnSpecPtr returnSpec,
     TableFunctionAnalyzer analyzer,
     TableFunctionFactory factory) {
   auto sanitizedName = exec::sanitizeName(name);
-  tableFunctions()[sanitizedName] = {
-      std::move(analyzer), std::move(factory), std::move(metadata)};
+  tableFunctions().insert(
+      {sanitizedName,
+       {std::move(argumentsSpec),
+        std::move(returnSpec),
+        std::move(analyzer),
+        std::move(factory)}});
   return true;
 }
 
-TableFunction::Metadata getTableFunctionMetadata(const std::string& name) {
+ReturnSpecPtr getTableFunctionReturnType(const std::string& name) {
   const auto sanitizedName = exec::sanitizeName(name);
   if (auto func = getTableFunctionEntry(sanitizedName)) {
-    return func.value()->metadata;
+    return func.value()->returnSpec;
   } else {
-    VELOX_USER_FAIL("Table function metadata not found for function: {}", name);
+    VELOX_USER_FAIL("ReturnTypeSpecification not found for function: {}", name);
+  }
+}
+
+TableArgumentSpecList getTableFunctionArgumentSpecs(const std::string& name) {
+  const auto sanitizedName = exec::sanitizeName(name);
+  if (auto func = getTableFunctionEntry(sanitizedName)) {
+    return func.value()->argumentsSpec;
+  } else {
+    VELOX_USER_FAIL("Arguments Specification not found for function: {}", name);
   }
 }
 

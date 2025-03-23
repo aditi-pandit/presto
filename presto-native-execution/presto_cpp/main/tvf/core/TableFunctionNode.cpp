@@ -22,7 +22,7 @@ using namespace facebook::velox::core;
 TableFunctionNode::TableFunctionNode(
     PlanNodeId id,
     const std::string& name,
-    std::shared_ptr<const TableFunctionHandle> handle,
+    TableFunctionHandlePtr handle,
     velox::RowTypePtr outputType,
     RequiredColumnsMap requiredColumns,
     PlanNodePtr source)

@@ -33,4 +33,10 @@ class TableArgument : public Argument {
   const velox::RowTypePtr rowType_;
 };
 
+class TableArgumentSpecification : public ArgumentSpecification {
+ public:
+  TableArgumentSpecification(std::string name, bool required)
+      : ArgumentSpecification(name, required){};
+};
+
 } // namespace facebook::presto::tvf

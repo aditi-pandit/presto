@@ -15,38 +15,40 @@
  */
 #pragma once
 
+#include "presto_cpp/main/tvf/spi/Argument.h"
+
 #include "velox/core/Expressions.h"
 
 namespace facebook::presto::tvf {
 
-class Argument {
+class ScalarArgument : public Argument {
  public:
-  Argument() {}
+  ScalarArgument(velox::TypePtr type, velox::VectorPtr value)
+      : type_(std::move(type)), constantValue_(std::move(value)) {}
 
-  virtual ~Argument() = default;
-
- protected:
-};
-
-class ArgumentSpecification {
- public:
-  ArgumentSpecification(std::string name, bool required)
-      : name_(std::move(name)), required_(required){};
-
-  virtual ~ArgumentSpecification() = default;
-
-  const std::string& name() const {
-    return name_;
+  const velox::TypePtr rowType() const {
+    return type_;
   }
 
-  const bool required() const {
-    return required_;
+  const velox::VectorPtr value() const {
+    return constantValue_;
   }
 
  private:
-  const std::string name_;
-  const bool required_;
-  // TODO : Add default value.
+  const velox::TypePtr type_;
+  const velox::VectorPtr constantValue_;
+};
+
+class ScalarArgumentSpecification : public ArgumentSpecification {
+ public:
+  ScalarArgumentSpecification(
+      std::string name,
+      velox::TypePtr type,
+      bool required)
+      : ArgumentSpecification(name, required), type_(std::move(type)){};
+
+ private:
+  const velox::TypePtr type_;
 };
 
 } // namespace facebook::presto::tvf

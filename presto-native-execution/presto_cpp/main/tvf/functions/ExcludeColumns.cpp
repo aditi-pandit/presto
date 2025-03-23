@@ -140,9 +140,15 @@ class ExcludeColumns : public TableFunction {
 } // namespace
 
 void registerExcludeColumns(const std::string& name) {
+  TableArgumentSpecList argSpecs;
+  argSpecs.insert(
+      std::make_shared<TableArgumentSpecification>(TABLE_ARGUMENT_NAME, true));
+  argSpecs.insert(
+      std::make_shared<ArgumentSpecification>(DESCRIPTOR_ARGUMENT_NAME, true));
   registerTableFunction(
       name,
-      TableFunction::Metadata::defaultMetadata(),
+      argSpecs,
+      std::make_shared<GenericTableReturnType>(),
       ExcludeColumns::analyze,
       [](const std::shared_ptr<const TableFunctionHandle>& handle,
          memory::MemoryPool* pool,
