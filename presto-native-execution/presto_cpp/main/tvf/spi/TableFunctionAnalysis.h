@@ -33,6 +33,17 @@ class TableFunctionHandle : public velox::ISerializable {
 
 using TableFunctionHandlePtr = std::shared_ptr<const TableFunctionHandle>;
 
+class TableSplitHandle : public velox::ISerializable {
+ public:
+  // This name is used for looking up the deserializer for the
+  // TableSplitHandle in the registry.
+  virtual std::string_view name() const = 0;
+
+  virtual folly::dynamic serialize() const = 0;
+};
+
+using TableSplitHandlePtr = std::shared_ptr<const TableSplitHandle>;
+
 using RequiredColumnsMap =
     std::unordered_map<std::string, std::vector<velox::column_index_t>>;
 

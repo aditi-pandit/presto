@@ -62,7 +62,14 @@ class TableFunction {
       const velox::core::QueryConfig& config);
 
   virtual std::shared_ptr<TableFunctionResult> apply(
-      const std::vector<velox::RowVectorPtr>& input) = 0;
+      const std::vector<velox::RowVectorPtr>& input) {
+    VELOX_NYI(" TableFunction::apply() for input vector is not implemented");
+  }
+
+  virtual std::shared_ptr<TableFunctionResult> apply(
+      const TableSplitHandlePtr& split) {
+    VELOX_NYI(" TableFunction::apply() for split is not implemented");
+  }
 
  protected:
   velox::memory::MemoryPool* pool_;

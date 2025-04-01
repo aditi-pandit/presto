@@ -13,7 +13,8 @@
 # target_include_directories(presto_tvf_exec PRIVATE
 # ${CMAKE_SOURCE_DIR}/presto_cpp/main/tvf/core)
 
-add_library(presto_tvf_exec TableFunctionOperator.cpp
-                            TableFunctionPartition.cpp)
+add_library(
+  presto_tvf_exec TableFunctionConnector.cpp TableFunctionOperator.cpp
+                  TableFunctionPartition.cpp)
 
 target_link_libraries(presto_tvf_exec presto_tvf_core presto_tvf_spi velox_exec)
