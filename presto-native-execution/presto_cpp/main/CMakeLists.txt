@@ -113,6 +113,11 @@ if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang"
   target_link_libraries(presto_server atomic)
 endif()
 
+# if(PRESTO_ENABLE_TABLE_FUNCTIONS) add_subdirectory(tvf)
+add_subdirectory(tvf)
+target_link_libraries(presto_server_lib presto_tvf_exec presto_tvf_functions)
+# endif()
+
 if(PRESTO_ENABLE_REMOTE_FUNCTIONS)
   add_library(presto_server_remote_function JsonSignatureParser.cpp
                                             RemoteFunctionRegisterer.cpp)
