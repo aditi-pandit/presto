@@ -26,6 +26,11 @@ public class TableFunctionInvocation
     private final QualifiedName name;
     private final List<TableFunctionArgument> arguments;
     private final List<List<QualifiedName>> copartitioning;
+    private boolean lateral;
+
+    private Relation lateralParent;
+
+    private int numLateralFields;
 
     public TableFunctionInvocation(NodeLocation location, QualifiedName name, List<TableFunctionArgument> arguments, List<List<QualifiedName>> copartitioning)
     {
@@ -33,6 +38,22 @@ public class TableFunctionInvocation
         this.name = requireNonNull(name, "name is null");
         this.arguments = requireNonNull(arguments, "arguments is null");
         this.copartitioning = requireNonNull(copartitioning, "copartitioning is null");
+        this.lateral = false;
+    }
+
+    public void setLateral()
+    {
+        this.lateral = true;
+    }
+
+    public void setLateralParent(Relation parent)
+    {
+        this.lateralParent = parent;
+    }
+
+    public void setNumLateralFields(int numFields)
+    {
+        this.numLateralFields = numFields;
     }
 
     public QualifiedName getName()
@@ -48,6 +69,21 @@ public class TableFunctionInvocation
     public List<List<QualifiedName>> getCopartitioning()
     {
         return copartitioning;
+    }
+
+    public boolean getLateral()
+    {
+        return lateral;
+    }
+
+    public Relation getLateralParent()
+    {
+        return lateralParent;
+    }
+
+    public int getNumLateralFields()
+    {
+        return numLateralFields;
     }
 
     @Override

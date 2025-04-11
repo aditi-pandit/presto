@@ -350,6 +350,7 @@ import static java.util.Map.Entry;
 import static java.util.Objects.requireNonNull;
 import static java.util.stream.Collectors.counting;
 import static java.util.stream.Collectors.groupingBy;
+import static java.util.stream.Collectors.toMap;
 
 class StatementAnalyzer
 {
@@ -1318,6 +1319,10 @@ class StatementAnalyzer
                     session.getRequiredTransactionId(), registrationCatalogMetadata.getConnectorId());
 
             TableFunctionAnalysis functionAnalysis = function.analyze(session.toConnectorSession(connectorId), transactionHandle, argumentsAnalysis.getPassedArguments());
+            if (node.getLateral() & !node.getCopartitioning().isEmpty()) {
+                throw new SemanticException(INVALID_TABLE_FUNCTION_INVOCATION, node, "Co-partitioning specified for lateral table function invocation");
+            }
+
             List<List<String>> copartitioningLists = analyzeCopartitioning(node.getCopartitioning(), argumentsAnalysis.getTableArgumentAnalyses());
 
             // determine the result relation type per SQL standard ISO/IEC 9075-2, 4.33 SQL-invoked routines, p. 123, 413, 414
@@ -1361,9 +1366,12 @@ class StatementAnalyzer
             }
 
             // validate the required input columns
-            Map<String, List<Integer>> requiredColumns = functionAnalysis.getRequiredColumns();
+            Map<String, List<Integer>> requiredColumns = new HashMap<>();
+            functionAnalysis.getRequiredColumns().forEach((name, columnsList) -> {
+                requiredColumns.put(name, columnsList);
+            });
             Map<String, TableArgumentAnalysis> tableArgumentsByName = argumentsAnalysis.getTableArgumentAnalyses().stream()
-                    .collect(toImmutableMap(TableArgumentAnalysis::getArgumentName, Function.identity()));
+                    .collect(toMap(TableArgumentAnalysis::getArgumentName, Function.identity()));
             Set<String> allInputs = ImmutableSet.copyOf(tableArgumentsByName.keySet());
             requiredColumns.forEach((name, columns) -> {
                 if (!allInputs.contains(name)) {
@@ -1389,6 +1397,33 @@ class StatementAnalyzer
                         throw new SemanticException(FUNCTION_IMPLEMENTATION_ERROR, "Table function %s does not specify required input columns from table argument %s", node.getName(), input);
                     });
 
+            // next, columns derived from table arguments, in order of argument declarations
+            List<String> tableArgumentNames = function.getArguments().stream()
+                    .filter(argumentSpecification -> argumentSpecification instanceof TableArgumentSpecification)
+                    .map(ArgumentSpecification::getName)
+                    .collect(Collectors.toList());
+
+            // If this is a lateral invocation, then the table function is passed the left relation (in scope) as the
+            // first table argument. All its input columns are required inputs. The table is marked pass - through, so
+            // all its columns are returned as well.
+            if (node.getLateral()) {
+                Relation lateral = node.getLateralParent();
+                if (lateral == null) {
+                    throw new SemanticException(INVALID_ARGUMENTS, "Unknown LATERAL table relation");
+                }
+                TableArgumentAnalysis lateralAnalysis = analyzeLateralArgument(lateral);
+
+                tableArgumentNames.add(0, lateralAnalysis.getArgumentName());
+                tableArgumentsByName.put(lateralAnalysis.getArgumentName(), lateralAnalysis);
+
+                int numFields = node.getNumLateralFields();
+                List<Integer> requiredColumnsList = new ArrayList<>();
+                for (int i = 0; i < numFields; i++) {
+                    requiredColumnsList.add(java.lang.Integer.valueOf(i));
+                }
+                requiredColumns.put(lateralAnalysis.getArgumentName(), requiredColumnsList);
+            }
+
             // The result relation type of a table function consists of:
             // 1. columns created by the table function, called the proper columns.
             // 2. passed columns from input tables:
@@ -1403,12 +1438,6 @@ class StatementAnalyzer
                         .map(field -> Field.newUnqualified(Optional.empty(), field.getName(), field.getType().orElseThrow(() -> new IllegalStateException("missing returned type for proper field"))))
                         .forEach(fields::add);
             }
-
-            // next, columns derived from table arguments, in order of argument declarations
-            List<String> tableArgumentNames = function.getArguments().stream()
-                    .filter(argumentSpecification -> argumentSpecification instanceof TableArgumentSpecification)
-                    .map(ArgumentSpecification::getName)
-                    .collect(toImmutableList());
 
             // table arguments in order of argument declarations
             ImmutableList.Builder<TableArgumentAnalysis> orderedTableArguments = ImmutableList.builder();
@@ -1434,13 +1463,34 @@ class StatementAnalyzer
                     function.getName(),
                     argumentsAnalysis.getPassedArguments(),
                     orderedTableArguments.build(),
-                    functionAnalysis.getRequiredColumns(),
+                    requiredColumns,
                     copartitioningLists,
                     properColumnsDescriptor == null ? 0 : properColumnsDescriptor.getFields().size(),
                     functionAnalysis.getHandle(),
                     transactionHandle));
 
             return createAndAssignScope(node, scope, fields.build());
+        }
+
+        private TableArgumentAnalysis analyzeLateralArgument(Relation relation)
+        {
+            TableArgumentAnalysis.Builder analysisBuilder = TableArgumentAnalysis.builder();
+            analysisBuilder.withArgumentName("lateral");
+
+            analysisBuilder.withRelation(relation);
+            QualifiedName relationName = analysis.getRelationName(relation);
+            if (relationName != null) {
+                analysisBuilder.withName(relationName);
+            }
+
+            // analyze the PRUNE/KEEP WHEN EMPTY property
+            analysisBuilder.withPruneWhenEmpty(true);
+
+            // record remaining properties
+            analysisBuilder.withRowSemantics(true);
+            analysisBuilder.withPassThroughColumns(true);
+
+            return analysisBuilder.build();
         }
 
         private ArgumentsAnalysis analyzeArguments(List<ArgumentSpecification> argumentSpecifications, List<TableFunctionArgument> arguments, Optional<Scope> scope, Node errorLocation)
@@ -2665,6 +2715,28 @@ class StatementAnalyzer
             }
 
             Scope left = process(node.getLeft(), scope);
+
+            if (isTableFunctionRelation(node.getRight())) {
+                TableFunctionInvocation tableFunctionNode = (TableFunctionInvocation) node.getRight();
+
+                if (node.getType() != Join.Type.IMPLICIT) {
+                    throw new SemanticException(NOT_SUPPORTED, node, "Lateral join with Table functions must be implicit");
+                }
+
+                if (criteria != null) {
+                    throw new SemanticException(NOT_SUPPORTED, node, "Lateral join with Table functions cannot have criteria");
+                }
+
+                // Lateral Table function will do an implicit join with the lhs, so will take care of it in the scoping.
+                tableFunctionNode.setLateral();
+                tableFunctionNode.setLateralParent((Relation) left.getRelationId().getSourceNode());
+                tableFunctionNode.setNumLateralFields(left.getRelationType().getAllFieldCount());
+
+                Scope right = process(node.getRight(), scope);
+                Scope output = createAndAssignScope(node, scope, right.getRelationType());
+                return output;
+            }
+
             Scope right = process(node.getRight(), isLateralRelation(node.getRight()) ? Optional.of(left) : scope);
 
             if (criteria instanceof JoinUsing) {
@@ -2913,6 +2985,15 @@ class StatementAnalyzer
                 return isLateralRelation(((AliasedRelation) node).getRelation());
             }
             return node instanceof Unnest || node instanceof Lateral;
+        }
+
+        private boolean isTableFunctionRelation(Relation node)
+        {
+            if (node instanceof TableFunctionInvocation) {
+                return true;
+            }
+
+            return false;
         }
 
         @Override

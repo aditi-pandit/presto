@@ -389,9 +389,23 @@ class RelationPlanner
         return new RelationPlan(planNode, analysis.getScope(node), subPlan.getFieldMappings());
     }
 
+    private boolean isTableFunctionRelation(Relation node)
+    {
+        if (node instanceof TableFunctionInvocation) {
+            return true;
+        }
+
+        return false;
+    }
     @Override
     protected RelationPlan visitJoin(Join node, SqlPlannerContext context)
     {
+        if (isTableFunctionRelation(node.getRight())) {
+            RelationPlan rightPlan = process(node.getRight(), context);
+            return rightPlan;
+            // Should we add a project and then return relation for it ?
+            //return new RelationPlan(unnestNode, analysis.getScope(joinNode), unnestNode.getOutputVariables());
+        }
         // TODO: translate the RIGHT join into a mirrored LEFT join when we refactor (@martint)
         RelationPlan leftPlan = process(node.getLeft(), context);
 

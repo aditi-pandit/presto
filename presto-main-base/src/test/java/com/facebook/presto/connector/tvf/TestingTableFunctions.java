@@ -30,6 +30,7 @@ import com.facebook.presto.spi.function.table.AbstractConnectorTableFunction;
 import com.facebook.presto.spi.function.table.Argument;
 import com.facebook.presto.spi.function.table.ConnectorTableFunctionHandle;
 import com.facebook.presto.spi.function.table.Descriptor;
+import com.facebook.presto.spi.function.table.DescriptorArgument;
 import com.facebook.presto.spi.function.table.DescriptorArgumentSpecification;
 import com.facebook.presto.spi.function.table.ScalarArgument;
 import com.facebook.presto.spi.function.table.ScalarArgumentSpecification;
@@ -524,6 +525,71 @@ public class TestingTableFunctions
                     Optional<Page> inputPage = getOnlyElement(input);
                     return inputPage.map(TableFunctionProcessorState.Processed::usedInputAndProduced).orElseThrow(NoSuchElementException::new);
                 };
+            }
+        }
+    }
+
+    public static class LateralIdentityFunction
+            extends AbstractConnectorTableFunction
+    {
+        public LateralIdentityFunction()
+        {
+            super(
+                    SCHEMA_NAME,
+                    "lateral_identity_function",
+                    ImmutableList.of(
+                            DescriptorArgumentSpecification.builder()
+                                    .name("C0")
+                                    .build()),
+                    GENERIC_TABLE);
+        }
+
+        @Override
+        public TableFunctionAnalysis analyze(ConnectorSession session, ConnectorTransactionHandle transaction, Map<String, Argument> arguments)
+        {
+            Descriptor c0Descriptor = ((DescriptorArgument) arguments.get("C0")).getDescriptor().get();
+            Descriptor returnedType = new Descriptor(c0Descriptor.getFields().stream()
+                    .map(field -> new Descriptor.Field(field.getName().concat("_lateral"), field.getType()))
+                    .collect(toImmutableList()));
+            return TableFunctionAnalysis.builder()
+                    .handle(new EmptyTableFunctionHandle(""))
+                    .returnedType(returnedType)
+                    .build();
+        }
+
+        public static class LateralIdentityFunctionProcessorProvider
+                implements TableFunctionProcessorProvider
+        {
+            @Override
+            public TableFunctionDataProcessor getDataProcessor(ConnectorTableFunctionHandle handle)
+            {
+                return new LateralIdentityPassThroughFunctionDataProcessor();
+            }
+        }
+
+        public static class LateralIdentityPassThroughFunctionDataProcessor
+                implements TableFunctionDataProcessor
+        {
+            private long processedPositions; // stateful
+
+            @Override
+            public TableFunctionProcessorState process(List<Optional<Page>> input)
+            {
+                if (input == null) {
+                    return FINISHED;
+                }
+
+                Page page = getOnlyElement(input).orElseThrow(NoSuchElementException::new);
+
+                // Pass through column at the end
+                BlockBuilder builder = BIGINT.createBlockBuilder(null, page.getPositionCount());
+                for (long index = processedPositions; index < processedPositions + page.getPositionCount(); index++) {
+                    // TODO check for long overflow
+                    builder.writeLong(index);
+                }
+                processedPositions = processedPositions + page.getPositionCount();
+                // Presuming the channel in position 0 is for the input descriptor.
+                return usedInputAndProduced(new Page(page.getBlock(0), builder.build()));
             }
         }
     }
