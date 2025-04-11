@@ -56,6 +56,14 @@ public class TableFunctionInvocation
         this.numLateralFields = numFields;
     }
 
+    public void setLateral() { this.lateral = true; }
+
+    public void setLateralParent(Relation parent) {
+      this.lateralParent = parent;
+    }
+
+    public void setNumLateralFields(int numFields) { this.numLateralFields = numFields; }
+
     public QualifiedName getName()
     {
         return name;
