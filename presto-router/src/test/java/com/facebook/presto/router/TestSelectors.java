@@ -110,7 +110,7 @@ public class TestSelectors
             selectors.add(selectorRuleSpec);
         }
 
-        RouterSpec routerSpec = new RouterSpec(groups, selectors, schedulerType, predictorUri);
+        RouterSpec routerSpec = new RouterSpec(groups, selectors, schedulerType, predictorUri, Optional.empty());
         JsonCodec<RouterSpec> codec = jsonCodec(RouterSpec.class);
         String configTemplate = codec.toJson(routerSpec);
 
@@ -124,7 +124,7 @@ public class TestSelectors
                 .add(new JsonModule())
                 .add(new JaxrsModule(true))
                 .add(new ServerSecurityModule())
-                .add(new RouterModule())
+                .add(new RouterModule(Optional.empty()))
                 .build());
 
         Injector injector = app.doNotInitializeLogging()
