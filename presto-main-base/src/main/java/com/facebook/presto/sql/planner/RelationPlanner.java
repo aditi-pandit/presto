@@ -379,11 +379,12 @@ class RelationPlanner
                     List<Expression> orderByColumns = tableArgument.getOrderBy().get().getSortItems().stream()
                             .map(SortItem::getSortKey)
                             .collect(Collectors.toList());
-                    for (Expression col : orderByColumns) {
-                        if (!sourcePlanBuilder.canTranslate(col)) {
-                            ResolvedField partition = sourcePlan.getScope().tryResolveField(col).get();
-                            partitionBy = ImmutableList.of(sourcePlan.getVariable(partition.getRelationFieldIndex()));
-                            sourcePlanBuilder.getTranslations().put(col, sourcePlan.getVariable(partition.getRelationFieldIndex()));
+                    for (Expression orderByColumn : orderByColumns) {
+                        if (!sourcePlanBuilder.canTranslate(orderByColumn)) {
+                            Optional<ResolvedField> resolvedField = sourcePlan.getScope().tryResolveField(orderByColumn);
+                            if (resolvedField.isPresent()) {
+                                sourcePlanBuilder.getTranslations().put(orderByColumn, sourcePlan.getVariable(resolvedField.get().getRelationFieldIndex()));
+                            }
                         }
                     }
                     // the ordering symbols are not coerced
