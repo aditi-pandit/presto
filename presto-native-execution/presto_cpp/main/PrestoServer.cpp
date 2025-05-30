@@ -71,6 +71,11 @@
 #include "presto_cpp/main/RemoteFunctionRegisterer.h"
 #endif
 
+// #ifdef PRESTO_ENABLE_TABLE_FUNCTIONS
+#include "presto_cpp/main/tvf/exec/TableFunctionOperator.h"
+#include "presto_cpp/main/tvf/functions/TableFunctionsRegistration.h"
+// #endif
+
 #ifdef __linux__
 // Required by BatchThreadFactory
 #include <pthread.h>
@@ -1273,6 +1278,12 @@ void PrestoServer::registerFunctions() {
       prestoBuiltinFunctionPrefix_);
   velox::window::prestosql::registerAllWindowFunctions(
       prestoBuiltinFunctionPrefix_);
+
+  // #ifdef PRESTO_ENABLE_TABLE_FUNCTIONS
+  velox::exec::Operator::registerOperator(
+      std::make_unique<tvf::TableFunctionTranslator>());
+  tvf::registerAllTableFunctions(prestoBuiltinFunctionPrefix_);
+  // #endif
 }
 
 void PrestoServer::registerRemoteFunctions() {

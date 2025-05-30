@@ -43,7 +43,7 @@ add_test(
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 
 add_dependencies(presto_expressions_test presto_operators presto_protocol
-                 presto_types)
+        presto_tvf_core presto_types)
 
 target_link_libraries(
   presto_expressions_test
@@ -54,6 +54,7 @@ target_link_libraries(
   $<TARGET_OBJECTS:presto_type_converter>
   $<TARGET_OBJECTS:presto_types>
   presto_operators
+  presto_tvf_core
   presto_type_test_utils
   velox_core
   velox_dwio_common_exception

@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 add_subdirectory(operators)
+add_subdirectory(tvf)
 add_subdirectory(types)
 add_subdirectory(http)
 add_subdirectory(common)
@@ -95,6 +96,8 @@ target_link_libraries(
 # dependencies first followed by FBThrift.
 target_link_libraries(presto_server_lib presto_thrift-cpp2 presto_thrift_extra
                       ${THRIFT_LIBRARY})
+
+target_link_libraries(presto_server_lib presto_tvf_exec presto_tvf_functions)
 
 set_property(TARGET presto_server_lib PROPERTY JOB_POOL_LINK
                                                presto_link_job_pool)
