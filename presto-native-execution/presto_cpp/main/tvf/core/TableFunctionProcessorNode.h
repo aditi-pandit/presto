@@ -14,22 +14,24 @@
 #pragma once
 
 #include "presto_cpp/main/tvf/spi/TableFunction.h"
+
+#include "velox/core/Expressions.h"
 #include "velox/core/PlanNode.h"
 
 namespace facebook::presto::tvf {
 
-class TableFunctionNode : public velox::core::PlanNode {
+class TableFunctionProcessorNode : public velox::core::PlanNode {
  public:
-  /// @param windowColumnNames specifies the output column
-  /// names for each window function column. SoWi
-  /// windowColumnNames.length() = windowFunctions.length().
-  TableFunctionNode(
+  TableFunctionProcessorNode(
       velox::core::PlanNodeId id,
       const std::string& name,
       TableFunctionHandlePtr handle,
+      std::vector<velox::core::FieldAccessTypedExprPtr> partitionKeys,
+      std::vector<velox::core::FieldAccessTypedExprPtr> sortingKeys,
+      std::vector<velox::core::SortOrder> sortingOrders,
       velox::RowTypePtr outputType,
       RequiredColumnsMap requiredColumns,
-      velox::core::PlanNodePtr source);
+      std::vector<velox::core::PlanNodePtr> sources);
 
   const std::vector<velox::core::PlanNodePtr>& sources() const override {
     return sources_;
@@ -48,7 +50,7 @@ class TableFunctionNode : public velox::core::PlanNode {
   };
 
   std::string_view name() const override {
-    return "TableFunction";
+    return "TableFunctionProcessor";
   }
 
   const std::string functionName() const {
@@ -59,8 +61,30 @@ class TableFunctionNode : public velox::core::PlanNode {
     return handle_;
   }
 
+  const std::vector<velox::core::FieldAccessTypedExprPtr>& partitionKeys()
+      const {
+    return partitionKeys_;
+  }
+
+  const std::vector<velox::core::FieldAccessTypedExprPtr>& sortingKeys() const {
+    return sortingKeys_;
+  }
+
+  const std::vector<velox::core::SortOrder>& sortingOrders() const {
+    return sortingOrders_;
+  }
+
   const RequiredColumnsMap requiredColumns() const {
     return requiredColumns_;
+  }
+
+  bool requiresSplits() const override {
+    if (sources_.empty()) {
+      // This is a leaf operator that needs splits then.
+      return true;
+    }
+
+    return false;
   }
 
   folly::dynamic serialize() const override;
@@ -76,6 +100,10 @@ class TableFunctionNode : public velox::core::PlanNode {
 
   TableFunctionHandlePtr handle_;
 
+  std::vector<velox::core::FieldAccessTypedExprPtr> partitionKeys_;
+  std::vector<velox::core::FieldAccessTypedExprPtr> sortingKeys_;
+  std::vector<velox::core::SortOrder> sortingOrders_;
+
   const velox::RowTypePtr outputType_;
 
   const RequiredColumnsMap requiredColumns_;
@@ -83,6 +111,7 @@ class TableFunctionNode : public velox::core::PlanNode {
   const std::vector<velox::core::PlanNodePtr> sources_;
 };
 
-using TableFunctionNodePtr = std::shared_ptr<const TableFunctionNode>;
+using TableFunctionProcessorNodePtr =
+    std::shared_ptr<const TableFunctionProcessorNode>;
 
 } // namespace facebook::presto::tvf

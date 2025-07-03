@@ -58,6 +58,18 @@ class SequenceHandle : public TableFunctionHandle {
     registry.Register("SequenceHandle", SequenceHandle::create);
   }
 
+  int64_t start() const {
+    return start_;
+  }
+
+  int64_t stop() const {
+    return stop_;
+  }
+
+  int64_t step() const {
+    return step_;
+  }
+
  private:
   int64_t start_;
   int64_t stop_;
@@ -66,18 +78,26 @@ class SequenceHandle : public TableFunctionHandle {
 
 class SequenceSplitHandle : public TableSplitHandle {
  public:
-  SequenceSplitHandle(int64_t start, int64_t stop)
-      : start_(start), stop_(stop){};
+  SequenceSplitHandle(int64_t start, int64_t numSteps)
+      : start_(start), numSteps_(numSteps){};
 
   std::string_view name() const override {
     return "SequenceSplitHandle";
+  }
+
+  int64_t start() const {
+    return start_;
+  }
+
+  int64_t numSteps() const {
+    return numSteps_;
   }
 
   folly::dynamic serialize() const override {
     folly::dynamic obj = folly::dynamic::object;
     obj["name"] = fmt::format("{}", name());
     obj["start"] = start_;
-    obj["stop"] = stop_;
+    obj["numSteps"] = numSteps_;
     return obj;
   }
 
@@ -85,7 +105,7 @@ class SequenceSplitHandle : public TableSplitHandle {
       const folly::dynamic& obj,
       void* context) {
     return std::make_shared<SequenceSplitHandle>(
-        obj["start"].asInt(), obj["stop"].asInt());
+        obj["start"].asInt(), obj["numSteps"].asInt());
   }
 
   static void registerSerDe() {
@@ -95,7 +115,7 @@ class SequenceSplitHandle : public TableSplitHandle {
 
  private:
   int64_t start_;
-  int64_t stop_;
+  int64_t numSteps_;
 };
 
 class SequenceAnalysis : public TableFunctionAnalysis {
@@ -105,8 +125,10 @@ class SequenceAnalysis : public TableFunctionAnalysis {
 
 class Sequence : public TableFunction {
  public:
-  explicit Sequence(velox::memory::MemoryPool* pool)
-      : TableFunction(pool, nullptr) {}
+  explicit Sequence(
+      velox::memory::MemoryPool* pool,
+      const SequenceHandle* handle)
+      : TableFunction(pool, nullptr), step_(handle->step()) {}
 
   static std::unique_ptr<TableFunctionAnalysis> analyze(
       const std::unordered_map<std::string, std::shared_ptr<Argument>>& args) {
@@ -146,11 +168,59 @@ class Sequence : public TableFunction {
         std::dynamic_pointer_cast<const SequenceSplitHandle>(split);
     VELOX_CHECK(sequenceSplit, "Split was not a SequenceSplitHandle");
 
-    // Figure the number of rows for the sequence number, and split into
-    // blocks to only return x at a time.
-    return std::make_shared<TableFunctionResult>(
-        TableFunctionResult::TableFunctionState::kFinished);
+    if (processed_) {
+      processed_ = false;
+      return std::make_shared<TableFunctionResult>(
+          TableFunctionResult::TableFunctionState::kFinished);
+    }
+
+    VELOX_CHECK(!processed_);
+
+    auto start = sequenceSplit->start();
+    auto numSteps = sequenceSplit->numSteps();
+    auto sequenceCol =
+        BaseVector::create<FlatVector<int64_t>>(BIGINT(), numSteps, pool_);
+    auto rawValues = sequenceCol->values()->asMutable<int64_t>();
+    for (auto i = 0; i < numSteps; i++) {
+      rawValues[i] = start + i * step_;
+    }
+
+    auto result =
+        BaseVector::create<RowVector>(ROW({BIGINT()}), numSteps, pool_);
+    result->childAt(0) = sequenceCol;
+
+    processed_ = true;
+    return std::make_shared<TableFunctionResult>(true, result);
   }
+
+  static std::vector<const TableSplitHandlePtr> getSplits(
+      const TableFunctionHandlePtr& handle) {
+    static const int64_t kMaxSteps = 10;
+    auto sequenceHandle =
+        std::dynamic_pointer_cast<const SequenceHandle>(handle);
+    auto start = sequenceHandle->start();
+    auto stop = sequenceHandle->stop();
+    auto step = sequenceHandle->step();
+
+    auto numSteps = (stop - start) / step;
+
+    std::vector<const TableSplitHandlePtr> splits = {};
+    splits.reserve((numSteps / kMaxSteps) + 1);
+    auto splitStart = start;
+    while (numSteps > 0) {
+      auto splitSteps = numSteps < kMaxSteps ? numSteps : kMaxSteps;
+      auto sequenceSplit =
+          std::make_shared<SequenceSplitHandle>(splitStart, splitSteps);
+      splits.push_back(sequenceSplit);
+      numSteps -= kMaxSteps;
+      splitStart = start + (kMaxSteps * step);
+    }
+    return splits;
+  }
+
+ private:
+  int64_t step_;
+  bool processed_;
 };
 } // namespace
 
@@ -178,8 +248,10 @@ void registerSequence(const std::string& name) {
          velox::HashStringAllocator* /*stringAllocator*/,
          const velox::core::QueryConfig& /*queryConfig*/)
           -> std::unique_ptr<TableFunction> {
-        return std::make_unique<Sequence>(pool);
-      });
+        auto sequenceHandle = dynamic_cast<const SequenceHandle*>(handle.get());
+        return std::make_unique<Sequence>(pool, sequenceHandle);
+      },
+      Sequence::getSplits);
   SequenceHandle::registerSerDe();
   SequenceSplitHandle::registerSerDe();
 }

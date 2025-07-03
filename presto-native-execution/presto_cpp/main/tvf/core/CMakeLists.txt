@@ -9,6 +9,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-add_library(presto_tvf_core TableFunctionNode.cpp)
+add_library(presto_tvf_core TableFunctionProcessorNode.cpp)
 
 target_link_libraries(presto_tvf_core velox_core)

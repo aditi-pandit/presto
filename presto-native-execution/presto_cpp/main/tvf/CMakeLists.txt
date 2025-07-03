@@ -14,6 +14,8 @@ add_subdirectory(exec)
 add_subdirectory(spi)
 add_subdirectory(functions)
 
-add_subdirectory(tests)
+# add_subdirectory(tests)
 
-# if(PRESTO_ENABLE_TESTING) add_subdirectory(tests) endif()
+if(PRESTO_ENABLE_TESTING)
+  add_subdirectory(tests)
+endif()

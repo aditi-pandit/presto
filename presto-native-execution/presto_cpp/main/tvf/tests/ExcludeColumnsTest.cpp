@@ -14,6 +14,7 @@
 #include <gtest/gtest.h>
 
 #include "presto_cpp/main/tvf/exec/TableFunctionOperator.h"
+#include "presto_cpp/main/tvf/exec/TableFunctionTranslator.h"
 #include "presto_cpp/main/tvf/functions/TableFunctionsRegistration.h"
 #include "presto_cpp/main/tvf/tests/PlanBuilder.h"
 
@@ -46,7 +47,8 @@ class ExcludeColumnsTest : public OperatorTestBase {
     // This code is added in PrestoToVeloxQueryPlan.
     auto& registry = DeserializationWithContextRegistryForSharedPtr();
     registry.Register(
-        "TableFunctionNode", presto::tvf::TableFunctionNode::create);
+        "TableFunctionProcessorNode",
+        presto::tvf::TableFunctionProcessorNode::create);
 
     velox::exec::Operator::registerOperator(
         std::make_unique<TableFunctionTranslator>());

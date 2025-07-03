@@ -32,21 +32,17 @@ class TableFunctionPartition {
   /// The TableFunctionPartition is constructed by TableFunctionOperator
   /// from the input data.
   /// 'data' : Underlying RowContainer of the TableFunctionOperator.
-  /// 'rows' : Pointers to rows in the RowContainer belonging to this partition.
-  /// 'sortKeyInfo' : Order by columns used by the the TableFunction operator.
-  TableFunctionPartition(velox::exec::RowContainer* data);
+  TableFunctionPartition(
+      velox::exec::RowContainer* data,
+      const folly::Range<char**>& rows,
+      const std::vector<velox::column_index_t>& inputMapping);
 
   ~TableFunctionPartition();
-
-  /// Adds input 'rows' for a partial TableFunctionPartition.
-  void addRows(const std::vector<char*>& rows);
 
   /// Returns the number of rows in the current TableFunctionPartition.
   velox::vector_size_t numRows() const {
     return partition_.size();
   }
-
-  void clear();
 
   /// Copies the values at 'columnIndex' into 'result' (starting at
   /// 'resultOffset') for the rows at positions in the 'rowNumbers'
@@ -77,20 +73,21 @@ class TableFunctionPartition {
       const velox::BufferPtr& nullsBuffer) const;
 
  private:
-  // Removes 'numRows' from 'data_' and 'rows_'.
-  void eraseRows(velox::vector_size_t numRows);
-
   // The RowContainer associated with the partition.
-  // It is owned by the WindowBuild that creates the partition.
+  // It is owned by the TablePartitionBuild that creates the partition.
   velox::exec::RowContainer* const data_;
 
-  // Points to the input rows for partial partition.
-  std::vector<char*> rows_;
-
   // folly::Range is for the partition rows iterator provided by the
-  // Window operator. The pointers are to rows from a RowContainer owned
+  // TableFunctionOperator. The pointers are to rows from a RowContainer owned
   // by the operator. We can assume these are valid values for the lifetime
-  // of WindowPartition.
+  // of TableFunctionPartition.
   folly::Range<char**> partition_;
+
+  // Mapping from window input column -> index in data_. This is required
+  // because the TableFunctionPartitionBuild reorders data_ to place partition
+  // and sort keys before other columns in data_. But the TableFunctionOperator
+  // and TableFunction code accesses TableFunctionPartition using the
+  // indexes of TableFunction input type.
+  const std::vector<velox::column_index_t> inputMapping_;
 };
 } // namespace facebook::presto::tvf

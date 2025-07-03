@@ -275,7 +275,8 @@ protocol::Descriptor buildDescriptor(const Descriptor& descriptor) {
     std::shared_ptr<std::string> type = (i < types.size())
         ? std::make_shared<std::string>(types.at(i)->toString())
         : nullptr;
-    fields.emplace_back(protocol::Field{names[i], type});
+    fields.emplace_back(
+        protocol::Field{std::make_shared<std::string>(names.at(i)), type});
   }
   return protocol::Descriptor{fields};
 }
@@ -316,7 +317,7 @@ buildArgumentSpecsList(TableArgumentSpecList argumentsSpec) {
       descriptorArgumentSpecification->name = descriptorArgumentSpec->name();
       descriptorArgumentSpecification->defaultValue =
           buildDescriptor(descriptorArgumentSpec->descriptor());
-          descriptorArgumentSpecification->required = false;
+      descriptorArgumentSpecification->required = false;
       argumentsSpecsList.emplace_back(descriptorArgumentSpecification);
     } else {
       VELOX_FAIL("Failed to convert to a valid argumentSpec");
@@ -331,13 +332,13 @@ std::shared_ptr<protocol::ReturnTypeSpecification> buildReturnTypeSpecification(
   if (returnTypeSpecification ==
       ReturnTypeSpecification::ReturnType::kGenericTable) {
     std::shared_ptr<protocol::GenericTableReturnTypeSpecification>
-        genericTableReturnTypeSpecification
-        = std::make_shared<protocol::GenericTableReturnTypeSpecification>();
+        genericTableReturnTypeSpecification =
+            std::make_shared<protocol::GenericTableReturnTypeSpecification>();
     return genericTableReturnTypeSpecification;
   } else {
     std::shared_ptr<protocol::DescribedTableReturnTypeSpecification>
-    describedTableReturnTypeSpecification
-        = std::make_shared<protocol::DescribedTableReturnTypeSpecification>();
+        describedTableReturnTypeSpecification =
+            std::make_shared<protocol::DescribedTableReturnTypeSpecification>();
     auto describedTable =
         std::dynamic_pointer_cast<DescribedTableReturnType>(returnSpec);
     describedTableReturnTypeSpecification->descriptor =
@@ -414,11 +415,9 @@ json getTableValuedFunctionsMetadata() {
     function.name = functionName;
     function.schema = schema;
     function.returnTypeSpecification =
-        buildReturnTypeSpecification(
-          getTableFunctionReturnType(entry.first));
-    function.arguments = 
-        buildArgumentSpecsList(
-          getTableFunctionArgumentSpecs(entry.first));
+        buildReturnTypeSpecification(getTableFunctionReturnType(entry.first));
+    function.arguments =
+        buildArgumentSpecsList(getTableFunctionArgumentSpecs(entry.first));
     protocol::to_json(tj, function);
     j[functionName] = tj;
   }

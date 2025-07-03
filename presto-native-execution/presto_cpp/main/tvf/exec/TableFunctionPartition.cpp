@@ -20,23 +20,13 @@ namespace facebook::presto::tvf {
 using namespace facebook::velox;
 using namespace facebook::velox::exec;
 
-TableFunctionPartition::TableFunctionPartition(RowContainer* data)
-    : data_(data), rows_(), partition_() {}
+TableFunctionPartition::TableFunctionPartition(
+    RowContainer* data,
+    const folly::Range<char**>& rows,
+    const std::vector<velox::column_index_t>& inputMapping)
+    : data_(data), partition_(rows), inputMapping_(inputMapping) {}
 
 TableFunctionPartition::~TableFunctionPartition() {
-  data_->clear();
-  data_->pool()->release();
-  rows_.clear();
-  partition_.clear();
-}
-
-void TableFunctionPartition::addRows(const std::vector<char*>& rows) {
-  rows_.insert(rows_.end(), rows.begin(), rows.end());
-  partition_ = folly::Range(rows_.data(), rows_.size());
-}
-
-void TableFunctionPartition::clear() {
-  rows_.clear();
   partition_.clear();
 }
 
@@ -48,8 +38,8 @@ void TableFunctionPartition::extractColumn(
   RowContainer::extractColumn(
       partition_.data(),
       rowNumbers,
-      data_->columnAt(columnIndex),
-      data_->columnHasNulls(columnIndex),
+      data_->columnAt(inputMapping_[columnIndex]),
+      data_->columnHasNulls(inputMapping_[columnIndex]),
       resultOffset,
       result);
 }
@@ -63,8 +53,8 @@ void TableFunctionPartition::extractColumn(
   RowContainer::extractColumn(
       partition_.data() + partitionOffset,
       numRows,
-      data_->columnAt(columnIndex),
-      data_->columnHasNulls(columnIndex),
+      data_->columnAt(inputMapping_[columnIndex]),
+      data_->columnHasNulls(inputMapping_[columnIndex]),
       resultOffset,
       result);
 }
@@ -77,7 +67,7 @@ void TableFunctionPartition::extractNulls(
   RowContainer::extractNulls(
       partition_.data() + partitionOffset,
       numRows,
-      data_->columnAt(columnIndex),
+      data_->columnAt(inputMapping_[columnIndex]),
       nullsBuffer);
 }
 

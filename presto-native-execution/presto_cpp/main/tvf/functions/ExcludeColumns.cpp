@@ -130,6 +130,7 @@ class ExcludeColumns : public TableFunction {
           TableFunctionResult::TableFunctionState::kFinished);
     }
 
+    // Get a projection of non-excluded columns from inputTableß
     return std::make_shared<TableFunctionResult>(true, std::move(inputTable));
   }
 

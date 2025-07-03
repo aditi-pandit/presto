@@ -13,7 +13,7 @@
  */
 #pragma once
 
-#include "presto_cpp/main/tvf/core/TableFunctionNode.h"
+#include "presto_cpp/main/tvf/core/TableFunctionProcessorNode.h"
 #include "presto_cpp/main/tvf/spi/TableFunction.h"
 #include "velox/core/PlanNode.h"
 

@@ -46,7 +46,8 @@ class PlanNodeSerdeTest : public testing::Test,
     // This code is added in PrestoToVeloxQueryPlan.
     auto& registry = DeserializationWithContextRegistryForSharedPtr();
     registry.Register(
-        "TableFunctionNode", presto::tvf::TableFunctionNode::create);
+        "TableFunctionProcessorNode",
+        presto::tvf::TableFunctionProcessorNode::create);
 
     data_ = {makeRowVector({
         makeFlatVector<int64_t>({1, 2, 3}),
@@ -67,11 +68,11 @@ class PlanNodeSerdeTest : public testing::Test,
     ASSERT_EQ(plan->toString(true, true), copy->toString(true, true));
   }
 
-  static std::vector<std::string> reverseColumns(const RowTypePtr& rowType) {
+  /*static std::vector<std::string> reverseColumns(const RowTypePtr& rowType) {
     auto names = rowType->names();
     std::reverse(names.begin(), names.end());
     return names;
-  }
+  }*/
 
   std::vector<RowVectorPtr> data_;
   RowTypePtr type_;
@@ -87,6 +88,26 @@ TEST_F(PlanNodeSerdeTest, excludeColumns) {
   auto plan = exec::test::PlanBuilder()
                   .values(data_, true)
                   .addNode(addTvfNode("exclude_columns", args))
+                  .planNode();
+  testSerde(plan);
+}
+
+TEST_F(PlanNodeSerdeTest, sequence) {
+  std::unordered_map<std::string, std::shared_ptr<Argument>> args;
+  args.insert(
+      {"START",
+       std::make_shared<ScalarArgument>(
+           BIGINT(), makeConstant(static_cast<int64_t>(1), 1, BIGINT()))});
+  args.insert(
+      {"STOP",
+       std::make_shared<ScalarArgument>(
+           BIGINT(), makeConstant(static_cast<int64_t>(10), 1, BIGINT()))});
+  args.insert(
+      {"STEP",
+       std::make_shared<ScalarArgument>(
+           BIGINT(), makeConstant(static_cast<int64_t>(1), 1, BIGINT()))});
+  auto plan = exec::test::PlanBuilder()
+                  .addNode(addTvfNode("sequence", args))
                   .planNode();
   testSerde(plan);
 }

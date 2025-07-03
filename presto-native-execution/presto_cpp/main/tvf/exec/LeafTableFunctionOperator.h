@@ -16,8 +16,7 @@
 #pragma once
 
 #include "presto_cpp/main/tvf/core/TableFunctionProcessorNode.h"
-#include "presto_cpp/main/tvf/exec/TableFunctionPartition.h"
-#include "presto_cpp/main/tvf/exec/TablePartitionBuild.h"
+#include "presto_cpp/main/tvf/exec/TableFunctionSplit.h"
 
 #include "velox/common/memory/HashStringAllocator.h"
 #include "velox/exec/Operator.h"
@@ -26,9 +25,9 @@
 
 namespace facebook::presto::tvf {
 
-class TableFunctionOperator : public velox::exec::Operator {
+class LeafTableFunctionOperator : public velox::exec::SourceOperator {
  public:
-  TableFunctionOperator(
+  LeafTableFunctionOperator(
       int32_t operatorId,
       velox::exec::DriverCtx* driverCtx,
       const std::shared_ptr<const TableFunctionProcessorNode>&
@@ -36,15 +35,7 @@ class TableFunctionOperator : public velox::exec::Operator {
 
   void initialize() override;
 
-  void addInput(velox::RowVectorPtr input) override;
-
-  void noMoreInput() override;
-
   velox::RowVectorPtr getOutput() override;
-
-  bool needsInput() const override {
-    return !noMoreInput_;
-  }
 
   velox::exec::BlockingReason isBlocked(
       velox::ContinueFuture* /* unused */) override {
@@ -52,8 +43,7 @@ class TableFunctionOperator : public velox::exec::Operator {
   }
 
   bool isFinished() override {
-    // There is no input and the function has completed as well.
-    return (noMoreInput_ && input_ == nullptr);
+    return noMoreSplits_;
   }
 
   void reclaim(
@@ -69,7 +59,9 @@ class TableFunctionOperator : public velox::exec::Operator {
       const std::shared_ptr<const TableFunctionProcessorNode>&
           tableFunctionNode);
 
-  void assembleInput();
+  void clear();
+
+  velox::exec::DriverCtx* const driverCtx_;
 
   velox::memory::MemoryPool* pool_;
   // HashStringAllocator required by functions that allocate out of line
@@ -78,28 +70,19 @@ class TableFunctionOperator : public velox::exec::Operator {
 
   std::shared_ptr<const TableFunctionProcessorNode> tableFunctionNode_;
 
-  // TODO : Figure how this works for a multi-input table parameter case.
-  velox::RowTypePtr inputType_;
-
-  // This would be a list when the operator supports multiple TableArguments.
-  const velox::RowTypePtr requiredColummType_;
-
-  // TablePartitionBuild is used to store input rows and return
-  // TableFunctionPartitions for the processing.
-  std::unique_ptr<TablePartitionBuild> tablePartitionBuild_;
-
-  std::shared_ptr<TableFunctionPartition> tableFunctionPartition_;
-
-  velox::RowVectorPtr input_;
+  std::shared_ptr<TableFunctionResult> result_;
 
   // This should be constructed for each partition.
   std::unique_ptr<TableFunction> function_;
 
-  velox::vector_size_t numRows_ = 0;
-  velox::vector_size_t numProcessedRows_ = 0;
-  velox::vector_size_t numPartitionProcessedRows_ = 0;
-  // Number of rows that be fit into an output block.
-  velox::vector_size_t numRowsPerOutput_;
+  bool noMoreSplits_ = false;
+  std::shared_ptr<TableFunctionSplit> currentSplit_;
+
+  velox::ContinueFuture blockingFuture_{velox::ContinueFuture::makeEmpty()};
+  velox::exec::BlockingReason blockingReason_{
+      velox::exec::BlockingReason::kNotBlocked};
+  std::function<void(const std::shared_ptr<velox::connector::ConnectorSplit>&)>
+      splitPreloader_{nullptr};
 };
 
 } // namespace facebook::presto::tvf

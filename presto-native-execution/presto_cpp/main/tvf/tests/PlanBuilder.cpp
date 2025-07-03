@@ -53,13 +53,29 @@ addTvfNode(
       outputType = velox::ROW(std::move(names), std::move(types));
     }
 
-    return std::make_shared<TableFunctionNode>(
+    std::vector<PlanNodePtr> sources;
+    if (source == nullptr) {
+      sources.clear();
+    } else {
+      sources.push_back(source);
+    }
+
+    std::vector<velox::core::FieldAccessTypedExprPtr> partitionKeys = {};
+    std::vector<velox::core::FieldAccessTypedExprPtr> sortingKeys = {};
+    std::vector<velox::core::SortOrder> sortingOrders = {};
+    return std::make_shared<TableFunctionProcessorNode>(
         nodeId,
         name,
         analysis->tableFunctionHandle(),
+        partitionKeys,
+        sortingKeys,
+        sortingOrders,
         outputType,
+        // This can't be directly used like this. The TableFunction is planned
+        // with a single join across all tables, so this doesn't translate the
+        // same way.
         analysis->requiredColumns(),
-        source);
+        sources);
   };
 }
 } // namespace facebook::presto::tvf
