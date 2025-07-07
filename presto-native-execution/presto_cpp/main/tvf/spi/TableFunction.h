@@ -71,6 +71,15 @@ class TableFunction {
     VELOX_NYI(" TableFunction::apply() for split is not implemented");
   }
 
+  static std::vector<const TableSplitHandlePtr> getSplits(
+      const std::string& name,
+      const TableFunctionHandlePtr& handle);
+
+  static std::vector<const TableSplitHandlePtr> defaultGetSplits(
+      const TableFunctionHandlePtr& /* handle */) {
+    VELOX_NYI("TableFunction::getSplits is not implemented");
+  }
+
  protected:
   velox::memory::MemoryPool* pool_;
   velox::HashStringAllocator* const stringAllocator_;
@@ -83,7 +92,7 @@ class TableFunction {
 /// object.
 /// @param resultType  Type of the result of the function.
 using TableFunctionFactory = std::function<std::unique_ptr<TableFunction>(
-    const std::shared_ptr<const TableFunctionHandle>& handle,
+    const TableFunctionHandlePtr& handle,
     velox::memory::MemoryPool* pool,
     velox::HashStringAllocator* stringAllocator,
     const velox::core::QueryConfig& config)>;
@@ -93,6 +102,11 @@ using TableFunctionAnalyzer =
         const std::unordered_map<std::string, std::shared_ptr<Argument>>& args,
         const velox::core::QueryConfig& config)>;
 
+using TableFunctionSplitGenerator =
+    std::function<std::vector<const TableSplitHandlePtr>(
+        const TableFunctionHandlePtr& handle)>;
+
+
 /// Register a Table function with the specified name.
 /// Registering a function with the same name a second time overrides the first
 /// registration.
@@ -101,13 +115,15 @@ bool registerTableFunction(
     TableArgumentSpecList argumentsSpec,
     ReturnSpecPtr returnSpec,
     TableFunctionAnalyzer analyzer,
-    TableFunctionFactory factory);
+    TableFunctionFactory factory,
+    TableFunctionSplitGenerator splitGenerator);
 
 struct TableFunctionEntry {
   TableArgumentSpecList argumentsSpec;
   ReturnSpecPtr returnSpec;
   TableFunctionAnalyzer analyzer;
   TableFunctionFactory factory;
+  TableFunctionSplitGenerator splitGenerator;
 };
 
 // Returning a pointer since it can be dynamic cast.

@@ -155,10 +155,9 @@ void registerExcludeColumns(const std::string& name) {
          HashStringAllocator* /*stringAllocator*/,
          const core::QueryConfig& /*queryConfig*/)
           -> std::unique_ptr<TableFunction> {
-        auto excludeHandle =
-            dynamic_cast<const ExcludeColumnsHandle*>(handle.get());
         return std::make_unique<ExcludeColumns>(pool);
-      });
+      },
+      TableFunction::defaultGetSplits);
   ExcludeColumnsHandle::registerSerDe();
 }
 

@@ -57,7 +57,7 @@ TEST_F(SequenceTest, basic) {
   std::unordered_map<std::string, std::shared_ptr<Argument>> args;
   args.insert({"START", std::make_shared<ScalarArgument>(BIGINT(), makeConstant(static_cast<int64_t>(10), 1, BIGINT()))});
   args.insert({"STOP", std::make_shared<ScalarArgument>(BIGINT(), makeConstant(static_cast<int64_t>(30), 1, BIGINT()))});
-  args.insert({"STEP", std::make_shared<ScalarArgument>(BIGINT(), makeConstant(static_cast<int64_t>(10), 1, BIGINT()))});
+  args.insert({"STEP", std::make_shared<ScalarArgument>(BIGINT(), makeConstant(static_cast<int64_t>(2), 1, BIGINT()))});
   auto plan = exec::test::PlanBuilder()
                   .addNode(addTvfNode("sequence", args))
                   .planNode();
@@ -65,6 +65,14 @@ TEST_F(SequenceTest, basic) {
   auto expected = makeRowVector({
       makeFlatVector<int64_t>({10, 20, 30})
   });
-  assertQuery(plan, expected);
+
+  auto sequenceTvfNode = dynamic_pointer_cast<const TableFunctionNode>(plan);
+  auto sequenceSplits = TableFunction::getSplits("sequence", sequenceTvfNode->handle());
+  std::vector<const velox::exec::Split> splits;
+  for (auto sequenceSplit : sequenceSplits) {
+    auto tableFunctionSplit = std::make_shared<TableFunctionSplit>(sequenceSplit);
+    splits.push_back(velox::exec::Split(tableFunctionSplit));
+  }
+  assertQuery(plan, splits, expected);
 }
 } // namespace facebook::velox::exec::test

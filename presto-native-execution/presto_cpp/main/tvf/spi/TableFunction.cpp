@@ -100,4 +100,17 @@ std::unique_ptr<TableFunctionAnalysis> TableFunction::analyze(
   VELOX_USER_FAIL("Table function not registered: {}", name);
 }
 
+std::vector<const TableSplitHandlePtr> TableFunction::getSplits(
+    const std::string& name,
+    const TableFunctionHandlePtr& handle) {
+  // Lookup the function in the new registry first.
+  if (auto func = getTableFunctionEntry(name)) {
+    return func.value()->splitGenerator(handle);
+  }
+
+  VELOX_USER_FAIL("Table function not registered: {}", name);
+
+}
+
+
 } // namespace facebook::presto::tvf
