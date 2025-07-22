@@ -60,6 +60,15 @@ class TableFunctionNode : public velox::core::PlanNode {
     return requiredColumns_;
   }
 
+  bool requiresSplits() const override {
+    if (sources_.empty()) {
+      // This is a leaf operator that needs splits then.
+      return true;
+    }
+
+    return false;
+  }
+
   folly::dynamic serialize() const override;
 
   static velox::core::PlanNodePtr create(

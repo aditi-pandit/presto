@@ -112,19 +112,4 @@ class TableFunctionOperator : public velox::exec::Operator {
   std::unique_ptr<TableFunction> function_;
 };
 
-// Custom translation logic to hook into Velox Driver.
-class TableFunctionTranslator
-    : public velox::exec::Operator::PlanNodeTranslator {
-  std::unique_ptr<velox::exec::Operator> toOperator(
-      velox::exec::DriverCtx* ctx,
-      int32_t id,
-      const velox::core::PlanNodePtr& node) {
-    if (auto tableFunctionNodeNode =
-            std::dynamic_pointer_cast<const TableFunctionNode>(node)) {
-      return std::make_unique<TableFunctionOperator>(
-          id, ctx, tableFunctionNodeNode);
-    }
-    return nullptr;
-  }
-};
 } // namespace facebook::presto::tvf

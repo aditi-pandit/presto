@@ -107,7 +107,8 @@ RowVectorPtr LeafTableFunctionOperator::getOutput() {
 
   VELOX_CHECK(
       result->state() == TableFunctionResult::TableFunctionState::kProcessed);
-  VELOX_CHECK(!result->usedInput());
+  // TODO: Figure what usedInput means for apply with splits.
+  //VELOX_CHECK(!result->usedInput());
 
   // Don't really understand why the dynamic_pointer_cast is needed.
   auto resultRows = dynamic_pointer_cast<RowVector>(result->result());

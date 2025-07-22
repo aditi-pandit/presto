@@ -54,8 +54,7 @@ void registerRemoteAnn(const std::string& name) {
          const velox::core::QueryConfig& /*queryConfig*/)
           -> std::unique_ptr<TableFunction> {
         return std::make_unique<RemoteAnn>(pool);
-      },
-      TableFunction::defaultGetSplits);
+      });
 }
 
 } // namespace facebook::presto::tvf

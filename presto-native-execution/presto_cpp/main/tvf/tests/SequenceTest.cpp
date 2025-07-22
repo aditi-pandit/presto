@@ -15,6 +15,7 @@
 
 #include "presto_cpp/main/tvf/exec/TableFunctionOperator.h"
 #include "presto_cpp/main/tvf/exec/TableFunctionSplit.h"
+#include "presto_cpp/main/tvf/exec/TableFunctionTranslator.h"
 #include "presto_cpp/main/tvf/functions/TableFunctionsRegistration.h"
 #include "presto_cpp/main/tvf/tests/PlanBuilder.h"
 
@@ -54,27 +55,47 @@ class SequenceTest : public OperatorTestBase {
     velox::exec::Operator::registerOperator(
         std::make_unique<TableFunctionTranslator>());
   }
+
+  std::unordered_map<std::string, std::shared_ptr<Argument>>
+  sequenceArgs(int64_t start, int64_t stop, int64_t step) {
+    std::unordered_map<std::string, std::shared_ptr<Argument>> args;
+    args.insert(
+        {"START",
+         std::make_shared<ScalarArgument>(
+             BIGINT(), makeConstant(start, 1, BIGINT()))});
+    args.insert(
+        {"STOP",
+         std::make_shared<ScalarArgument>(
+             BIGINT(), makeConstant(stop, 1, BIGINT()))});
+    args.insert(
+        {"STEP",
+         std::make_shared<ScalarArgument>(
+             BIGINT(), makeConstant(step, 1, BIGINT()))});
+
+    return args;
+  }
+
+  std::vector<velox::exec::Split> splitsForTvf(const core::PlanNodePtr& node) {
+    auto sequenceTvfNode = dynamic_pointer_cast<const TableFunctionNode>(node);
+    auto sequenceSplits =
+        TableFunction::getSplits("sequence", sequenceTvfNode->handle());
+    std::vector<velox::exec::Split> tvfSplits;
+    for (auto sequenceSplit : sequenceSplits) {
+      auto tableFunctionSplit =
+          std::make_shared<TableFunctionSplit>(sequenceSplit);
+      tvfSplits.push_back(velox::exec::Split(tableFunctionSplit));
+    }
+
+    return tvfSplits;
+  }
 };
 
 TEST_F(SequenceTest, basic) {
-  std::unordered_map<std::string, std::shared_ptr<Argument>> args;
-  args.insert(
-      {"START",
-       std::make_shared<ScalarArgument>(
-           BIGINT(), makeConstant(static_cast<int64_t>(10), 1, BIGINT()))});
-  args.insert(
-      {"STOP",
-       std::make_shared<ScalarArgument>(
-           BIGINT(), makeConstant(static_cast<int64_t>(30), 1, BIGINT()))});
-  args.insert(
-      {"STEP",
-       std::make_shared<ScalarArgument>(
-           BIGINT(), makeConstant(static_cast<int64_t>(2), 1, BIGINT()))});
   auto plan = exec::test::PlanBuilder()
-                  .addNode(addTvfNode("sequence", args))
+                  .addNode(addTvfNode("sequence", sequenceArgs(10, 30, 2)))
                   .planNode();
 
-  auto expected = makeRowVector({makeFlatVector<int64_t>({10, 20, 30})});
+  auto expected = makeRowVector({makeFlatVector<int64_t>({10, 12, 14, 16, 18, 20, 22, 24, 26, 28})});
 
   auto sequenceTvfNode = dynamic_pointer_cast<const TableFunctionNode>(plan);
   auto sequenceSplits =
@@ -86,7 +107,34 @@ TEST_F(SequenceTest, basic) {
     tvfSplits.push_back(velox::exec::Split(tableFunctionSplit));
   }
 
-  AssertQueryBuilder(plan).splits(tvfSplits).assertResults(expected);
+  AssertQueryBuilder(plan).splits(splitsForTvf(plan)).assertResults(expected);
+}
+
+TEST_F(SequenceTest, join) {
+  auto planNodeIdGenerator = std::make_shared<core::PlanNodeIdGenerator>();
+
+  core::PlanNodeId sourceId1;
+  auto source1 = exec::test::PlanBuilder(planNodeIdGenerator)
+                  .addNode(addTvfNode("sequence", sequenceArgs(10, 30, 2)))
+                  .capturePlanNodeId(sourceId1)
+                  .planNode();
+
+  core::PlanNodeId sourceId2;
+  core::PlanNodePtr source2;
+  auto plan = exec::test::PlanBuilder(planNodeIdGenerator)
+                  .addNode(addTvfNode("sequence", sequenceArgs(10, 30, 2)))
+                  .capturePlanNodeId(sourceId2)
+                  .capturePlanNode(source2)
+                  .project({"sequential_number AS left_sequence"})
+                  .nestedLoopJoin(source1, "sequential_number = left_sequence", {"left_sequence"})
+                  .planNode();
+
+  auto expected = makeRowVector({makeFlatVector<int64_t>({10, 12, 14, 16, 18, 20, 22, 24, 26, 28})});
+
+  AssertQueryBuilder(plan)
+      .splits(sourceId1, splitsForTvf(source1))
+      .splits(sourceId2, splitsForTvf(source2))
+      .assertResults(expected);
 }
 
 } // namespace facebook::velox::exec::test

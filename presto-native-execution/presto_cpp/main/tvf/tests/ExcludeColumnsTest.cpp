@@ -14,6 +14,7 @@
 #include <gtest/gtest.h>
 
 #include "presto_cpp/main/tvf/exec/TableFunctionOperator.h"
+#include "presto_cpp/main/tvf/exec/TableFunctionTranslator.h"
 #include "presto_cpp/main/tvf/functions/TableFunctionsRegistration.h"
 #include "presto_cpp/main/tvf/tests/PlanBuilder.h"
 
