@@ -13,6 +13,7 @@
  */
 #include "presto_cpp/main/tvf/tests/PlanBuilder.h"
 
+
 using namespace facebook::velox;
 using namespace facebook::velox::core;
 
@@ -60,7 +61,7 @@ addTvfNode(
       sources.push_back(source);
     }
 
-    return std::make_shared<TableFunctionNode>(
+    return std::make_shared<TableFunctionProcessorNode>(
         nodeId,
         name,
         analysis->tableFunctionHandle(),

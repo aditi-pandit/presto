@@ -13,6 +13,7 @@
  */
 #include <gtest/gtest.h>
 
+#include "presto_cpp/main/tvf/core/TableFunctionProcessorNode.h"
 #include "presto_cpp/main/tvf/exec/TableFunctionOperator.h"
 #include "presto_cpp/main/tvf/exec/TableFunctionSplit.h"
 #include "presto_cpp/main/tvf/exec/TableFunctionTranslator.h"
@@ -50,7 +51,7 @@ class SequenceTest : public OperatorTestBase {
     // This code is added in PrestoToVeloxQueryPlan.
     auto& registry = DeserializationWithContextRegistryForSharedPtr();
     registry.Register(
-        "TableFunctionNode", presto::tvf::TableFunctionNode::create);
+        "TableFunctionProcessorNode", presto::tvf::TableFunctionProcessorNode::create);
 
     velox::exec::Operator::registerOperator(
         std::make_unique<TableFunctionTranslator>());
@@ -76,7 +77,7 @@ class SequenceTest : public OperatorTestBase {
   }
 
   std::vector<velox::exec::Split> splitsForTvf(const core::PlanNodePtr& node) {
-    auto sequenceTvfNode = dynamic_pointer_cast<const TableFunctionNode>(node);
+    auto sequenceTvfNode = dynamic_pointer_cast<const TableFunctionProcessorNode>(node);
     auto sequenceSplits =
         TableFunction::getSplits("sequence", sequenceTvfNode->handle());
     std::vector<velox::exec::Split> tvfSplits;
@@ -97,7 +98,7 @@ TEST_F(SequenceTest, basic) {
 
   auto expected = makeRowVector({makeFlatVector<int64_t>({10, 12, 14, 16, 18, 20, 22, 24, 26, 28})});
 
-  auto sequenceTvfNode = dynamic_pointer_cast<const TableFunctionNode>(plan);
+  auto sequenceTvfNode = dynamic_pointer_cast<const TableFunctionProcessorNode>(plan);
   auto sequenceSplits =
       TableFunction::getSplits("sequence", sequenceTvfNode->handle());
   std::vector<velox::exec::Split> tvfSplits;
@@ -122,14 +123,14 @@ TEST_F(SequenceTest, join) {
   core::PlanNodeId sourceId2;
   core::PlanNodePtr source2;
   auto plan = exec::test::PlanBuilder(planNodeIdGenerator)
-                  .addNode(addTvfNode("sequence", sequenceArgs(10, 30, 2)))
+                  .addNode(addTvfNode("sequence", sequenceArgs(20, 30, 2)))
                   .capturePlanNodeId(sourceId2)
                   .capturePlanNode(source2)
                   .project({"sequential_number AS left_sequence"})
                   .nestedLoopJoin(source1, "sequential_number = left_sequence", {"left_sequence"})
                   .planNode();
 
-  auto expected = makeRowVector({makeFlatVector<int64_t>({10, 12, 14, 16, 18, 20, 22, 24, 26, 28})});
+  auto expected = makeRowVector({makeFlatVector<int64_t>({20, 22, 24, 26, 28})});
 
   AssertQueryBuilder(plan)
       .splits(sourceId1, splitsForTvf(source1))

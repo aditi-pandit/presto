@@ -18,9 +18,9 @@
 
 namespace facebook::presto::tvf {
 
-class TableFunctionNode : public velox::core::PlanNode {
+class TableFunctionProcessorNode : public velox::core::PlanNode {
  public:
-  TableFunctionNode(
+  TableFunctionProcessorNode(
       velox::core::PlanNodeId id,
       const std::string& name,
       TableFunctionHandlePtr handle,
@@ -45,7 +45,7 @@ class TableFunctionNode : public velox::core::PlanNode {
   };
 
   std::string_view name() const override {
-    return "TableFunction";
+    return "TableFunctionProcessor";
   }
 
   const std::string functionName() const {
@@ -89,6 +89,6 @@ class TableFunctionNode : public velox::core::PlanNode {
   const std::vector<velox::core::PlanNodePtr> sources_;
 };
 
-using TableFunctionNodePtr = std::shared_ptr<const TableFunctionNode>;
+using TableFunctionProcessorNodePtr = std::shared_ptr<const TableFunctionProcessorNode>;
 
 } // namespace facebook::presto::tvf

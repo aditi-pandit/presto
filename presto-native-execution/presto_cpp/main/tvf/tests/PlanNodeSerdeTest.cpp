@@ -46,7 +46,7 @@ class PlanNodeSerdeTest : public testing::Test,
     // This code is added in PrestoToVeloxQueryPlan.
     auto& registry = DeserializationWithContextRegistryForSharedPtr();
     registry.Register(
-        "TableFunctionNode", presto::tvf::TableFunctionNode::create);
+        "TableFunctionProcessorNode", presto::tvf::TableFunctionProcessorNode::create);
 
     data_ = {makeRowVector({
         makeFlatVector<int64_t>({1, 2, 3}),

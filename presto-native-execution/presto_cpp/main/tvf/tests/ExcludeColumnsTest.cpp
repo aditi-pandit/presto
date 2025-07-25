@@ -47,7 +47,7 @@ class ExcludeColumnsTest : public OperatorTestBase {
     // This code is added in PrestoToVeloxQueryPlan.
     auto& registry = DeserializationWithContextRegistryForSharedPtr();
     registry.Register(
-        "TableFunctionNode", presto::tvf::TableFunctionNode::create);
+        "TableFunctionProcessorNode", presto::tvf::TableFunctionProcessorNode::create);
 
     velox::exec::Operator::registerOperator(
         std::make_unique<TableFunctionTranslator>());

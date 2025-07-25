@@ -29,7 +29,7 @@ namespace {
 
 const RowTypePtr requiredColumnType(
     const std::string& name,
-    const TableFunctionNodePtr& tableFunctionNode) {
+    const TableFunctionProcessorNodePtr& tableFunctionNode) {
   VELOX_CHECK_GT(tableFunctionNode->requiredColumns().count(name), 0);
   auto columns = tableFunctionNode->requiredColumns().at(name);
 
@@ -48,7 +48,7 @@ const RowTypePtr requiredColumnType(
 TableFunctionOperator::TableFunctionOperator(
     int32_t operatorId,
     DriverCtx* driverCtx,
-    const TableFunctionNodePtr& tableFunctionNode)
+    const TableFunctionProcessorNodePtr& tableFunctionNode)
     : Operator(
           driverCtx,
           tableFunctionNode->outputType(),
@@ -83,7 +83,7 @@ void TableFunctionOperator::initialize() {
 }
 
 void TableFunctionOperator::createTableFunction(
-    const std::shared_ptr<const TableFunctionNode>& node) {
+    const std::shared_ptr<const TableFunctionProcessorNode>& node) {
   function_ = TableFunction::create(
       node->functionName(),
       node->handle(),
@@ -181,8 +181,7 @@ RowVectorPtr TableFunctionOperator::getOutput() {
 
   VELOX_CHECK(
       result->state() == TableFunctionResult::TableFunctionState::kProcessed);
-  // Don't really understand why the dynamic_pointer_cast is needed.
-  auto resultRows = std::dynamic_pointer_cast<RowVector>(result->result());
+  auto resultRows = result->result();
   VELOX_CHECK(resultRows);
   if (!result->usedInput()) {
     // Since the input rows are not completely consumed, the result_

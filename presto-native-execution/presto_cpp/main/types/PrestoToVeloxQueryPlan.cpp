@@ -33,7 +33,7 @@
 #include "presto_cpp/main/operators/ShuffleRead.h"
 #include "presto_cpp/main/operators/ShuffleWrite.h"
 // #ifdef PRESTO_ENABLE_TABLE_FUNCTIONS
-// #include "presto_cpp/main/tvf/core/TableFunctionNode.h"
+// #include "presto_cpp/main/tvf/core/TableFunctionProcessorNode.h"
 // #endif
 #include "presto_cpp/main/types/TypeParser.h"
 
@@ -2271,7 +2271,7 @@ void registerPrestoPlanNodeSerDe() {
 
   // #ifdef PRESTO_ENABLE_TABLE_FUNCTIONS
   // registry.Register(
-  //     "TableFunctionNode", presto::tvf::TableFunctionNode::create);
+  //     "TableFunctionProcessorNode", presto::tvf::TableFunctionProcessorNode::create);
   // #endif
 }
 

@@ -15,7 +15,7 @@
  */
 #pragma once
 
-#include "presto_cpp/main/tvf/core/TableFunctionNode.h"
+#include "presto_cpp/main/tvf/core/TableFunctionProcessorNode.h"
 #include "presto_cpp/main/tvf/exec/TableFunctionPartition.h"
 
 #include "velox/common/memory/HashStringAllocator.h"
@@ -30,7 +30,7 @@ class TableFunctionOperator : public velox::exec::Operator {
   TableFunctionOperator(
       int32_t operatorId,
       velox::exec::DriverCtx* driverCtx,
-      const std::shared_ptr<const TableFunctionNode>& tableFunctionNode);
+      const std::shared_ptr<const TableFunctionProcessorNode>& tableFunctionNode);
 
   void initialize() override;
 
@@ -64,7 +64,7 @@ class TableFunctionOperator : public velox::exec::Operator {
   }
 
   void createTableFunction(
-      const std::shared_ptr<const TableFunctionNode>& tableFunctionNode);
+      const std::shared_ptr<const TableFunctionProcessorNode>& tableFunctionNode);
 
   void assembleInput();
 
@@ -75,7 +75,7 @@ class TableFunctionOperator : public velox::exec::Operator {
   // buffers.
   velox::HashStringAllocator stringAllocator_;
 
-  std::shared_ptr<const TableFunctionNode> tableFunctionNode_;
+  std::shared_ptr<const TableFunctionProcessorNode> tableFunctionNode_;
 
   // TODO : Figure how this works for a multi-input table parameter case.
   velox::RowTypePtr inputType_;

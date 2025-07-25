@@ -15,7 +15,7 @@
 */
 #pragma once
 
-#include "presto_cpp/main/tvf/core/TableFunctionNode.h"
+#include "presto_cpp/main/tvf/core/TableFunctionProcessorNode.h"
 #include "presto_cpp/main/tvf/exec/LeafTableFunctionOperator.h"
 #include "presto_cpp/main/tvf/exec/TableFunctionOperator.h"
 
@@ -31,7 +31,7 @@ class TableFunctionTranslator
       int32_t id,
       const velox::core::PlanNodePtr& node) {
     if (auto tableFunctionNodeNode =
-            std::dynamic_pointer_cast<const TableFunctionNode>(node)) {
+            std::dynamic_pointer_cast<const TableFunctionProcessorNode>(node)) {
       if (tableFunctionNodeNode->sources().empty()) {
         return std::make_unique<LeafTableFunctionOperator>(id, ctx, tableFunctionNodeNode);
       }

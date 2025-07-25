@@ -27,7 +27,7 @@ using namespace facebook::velox::exec;
 LeafTableFunctionOperator::LeafTableFunctionOperator(
     int32_t operatorId,
     DriverCtx* driverCtx,
-    const TableFunctionNodePtr& tableFunctionNode)
+    const TableFunctionProcessorNodePtr& tableFunctionNode)
     : SourceOperator(
           driverCtx,
           tableFunctionNode->outputType(),
@@ -51,7 +51,7 @@ void LeafTableFunctionOperator::initialize() {
 }
 
 void LeafTableFunctionOperator::createTableFunction(
-    const std::shared_ptr<const TableFunctionNode>& node) {
+    const std::shared_ptr<const TableFunctionProcessorNode>& node) {
   function_ = TableFunction::create(
       node->functionName(),
       node->handle(),
@@ -110,8 +110,7 @@ RowVectorPtr LeafTableFunctionOperator::getOutput() {
   // TODO: Figure what usedInput means for apply with splits.
   //VELOX_CHECK(!result->usedInput());
 
-  // Don't really understand why the dynamic_pointer_cast is needed.
-  auto resultRows = dynamic_pointer_cast<RowVector>(result->result());
+  auto resultRows = result->result();
   VELOX_CHECK(resultRows);
 
   return std::move(resultRows);

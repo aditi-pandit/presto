@@ -15,7 +15,7 @@
  */
 #pragma once
 
-#include "presto_cpp/main/tvf/core/TableFunctionNode.h"
+#include "presto_cpp/main/tvf/core/TableFunctionProcessorNode.h"
 #include "presto_cpp/main/tvf/exec/TableFunctionSplit.h"
 
 #include "velox/common/memory/HashStringAllocator.h"
@@ -30,7 +30,7 @@ class LeafTableFunctionOperator : public velox::exec::SourceOperator {
   LeafTableFunctionOperator(
       int32_t operatorId,
       velox::exec::DriverCtx* driverCtx,
-      const std::shared_ptr<const TableFunctionNode>& tableFunctionNode);
+      const std::shared_ptr<const TableFunctionProcessorNode>& tableFunctionNode);
 
   void initialize() override;
 
@@ -55,7 +55,7 @@ class LeafTableFunctionOperator : public velox::exec::SourceOperator {
   }
 
   void createTableFunction(
-      const std::shared_ptr<const TableFunctionNode>& tableFunctionNode);
+      const std::shared_ptr<const TableFunctionProcessorNode>& tableFunctionNode);
 
   void clear();
 
@@ -66,7 +66,7 @@ class LeafTableFunctionOperator : public velox::exec::SourceOperator {
   // buffers.
   velox::HashStringAllocator stringAllocator_;
 
-  std::shared_ptr<const TableFunctionNode> tableFunctionNode_;
+  std::shared_ptr<const TableFunctionProcessorNode> tableFunctionNode_;
 
   std::shared_ptr<TableFunctionResult> result_;
 

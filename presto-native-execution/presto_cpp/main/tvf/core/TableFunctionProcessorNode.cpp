@@ -12,14 +12,14 @@
  * limitations under the License.
  */
 
-#include "presto_cpp/main/tvf/core/TableFunctionNode.h"
+#include "presto_cpp/main/tvf/core/TableFunctionProcessorNode.h"
 
 namespace facebook::presto::tvf {
 
 using namespace facebook::velox;
 using namespace facebook::velox::core;
 
-TableFunctionNode::TableFunctionNode(
+TableFunctionProcessorNode::TableFunctionProcessorNode(
     PlanNodeId id,
     const std::string& name,
     TableFunctionHandlePtr handle,
@@ -33,9 +33,9 @@ TableFunctionNode::TableFunctionNode(
       requiredColumns_(std::move(requiredColumns)),
       sources_{std::move(sources)} {}
 
-void TableFunctionNode::addDetails(std::stringstream& stream) const {}
+void TableFunctionProcessorNode::addDetails(std::stringstream& stream) const {}
 
-folly::dynamic TableFunctionNode::serialize() const {
+folly::dynamic TableFunctionProcessorNode::serialize() const {
   auto obj = PlanNode::serialize();
   if (handle_) {
     obj["handle"] = handle_->serialize();
@@ -84,7 +84,7 @@ RowTypePtr deserializeRowType(const folly::dynamic& obj) {
 } // namespace
 
 // static
-PlanNodePtr TableFunctionNode::create(
+PlanNodePtr TableFunctionProcessorNode::create(
     const folly::dynamic& obj,
     void* context) {
   auto sources = deserializeSources(obj, context);
@@ -102,7 +102,7 @@ PlanNodePtr TableFunctionNode::create(
     requiredColumns[tableName] = columnNames;
   }
 
-  return std::make_shared<TableFunctionNode>(
+  return std::make_shared<TableFunctionProcessorNode>(
       deserializePlanNodeId(obj),
       name,
       handle,
