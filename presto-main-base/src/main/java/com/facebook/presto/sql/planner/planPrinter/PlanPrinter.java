@@ -1323,8 +1323,10 @@ public class PlanPrinter
         }
 
         @Override
-        public Void visitOffset(OffsetNode node, Void context) {
+        public Void visitOffset(OffsetNode node, Void context)
+        {
             addNode(node, "Offset", format("[%s]", node.getCount()));
+
             return processChildren(node, context);
         }
 
