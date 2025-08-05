@@ -152,6 +152,7 @@ SystemConfig::SystemConfig() {
           NONE_PROP(kTaskPartitionedWriterCount),
           NUM_PROP(kConcurrentLifespansPerTask, 1),
           STR_PROP(kTaskMaxPartialAggregationMemory, "16MB"),
+          NUM_PROP(kDriverMaxSplitPreload, 2),
           NUM_PROP(kHttpServerNumIoThreadsHwMultiplier, 1.0),
           NUM_PROP(kHttpServerNumCpuThreadsHwMultiplier, 1.0),
           NONE_PROP(kHttpServerHttpsPort),
@@ -263,6 +264,7 @@ SystemConfig::SystemConfig() {
           STR_PROP(kPluginDir, ""),
           NUM_PROP(kExchangeIoEvbViolationThresholdMs, 1000),
           NUM_PROP(kHttpSrvIoEvbViolationThresholdMs, 1000),
+          NUM_PROP(kMaxLocalExchangePartitionBufferSize, 65536),
       };
 }
 
@@ -400,6 +402,10 @@ std::string SystemConfig::remoteFunctionServerSerde() const {
 
 int32_t SystemConfig::maxDriversPerTask() const {
   return optionalProperty<int32_t>(kMaxDriversPerTask).value();
+}
+
+int32_t SystemConfig::driverMaxSplitPreload() const {
+  return optionalProperty<int32_t>(kDriverMaxSplitPreload).value();
 }
 
 folly::Optional<int32_t> SystemConfig::taskWriterCount() const {
@@ -907,6 +913,10 @@ int32_t SystemConfig::exchangeIoEvbViolationThresholdMs() const {
 int32_t SystemConfig::httpSrvIoEvbViolationThresholdMs() const {
   return optionalProperty<int32_t>(kHttpSrvIoEvbViolationThresholdMs)
       .value();
+}
+
+uint64_t SystemConfig::maxLocalExchangePartitionBufferSize() const {
+  return optionalProperty<uint64_t>(kMaxLocalExchangePartitionBufferSize).value();
 }
 
 NodeConfig::NodeConfig() {

@@ -25,9 +25,11 @@
 #include "presto_cpp/main/PeriodicHeartbeatManager.h"
 #include "presto_cpp/main/PrestoExchangeSource.h"
 #include "presto_cpp/main/PrestoServerOperations.h"
+#include "presto_cpp/main/tvf/spi/TableFunction.h"
 #include "presto_cpp/main/types/VeloxPlanValidator.h"
 #include "velox/common/caching/AsyncDataCache.h"
 #include "velox/common/memory/MemoryAllocator.h"
+
 #if __has_include("filesystem")
 #include <filesystem>
 namespace fs = std::filesystem;
@@ -126,6 +128,8 @@ class PrestoServer {
 
   virtual void initializeCoordinatorDiscoverer();
 
+  virtual void initializeThreadPools();
+
   virtual std::shared_ptr<velox::exec::TaskListener> getTaskListener();
 
   virtual std::shared_ptr<velox::exec::ExprSetListener> getExprSetListener();
@@ -193,8 +197,6 @@ class PrestoServer {
   getHttpServerFilters() const;
 
   void initializeVeloxMemory();
-
-  void initializeThreadPools();
 
   void registerStatsCounters();
 
