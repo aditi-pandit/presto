@@ -45,7 +45,8 @@ bool registerTableFunction(
     TableArgumentSpecList argumentsSpec,
     ReturnSpecPtr returnSpec,
     TableFunctionAnalyzer analyzer,
-    TableFunctionFactory factory,
+    TableFunctionDataProcessorFactory dataProcessorfactory,
+    TableFunctionSplitProcessorFactory splitProcessorfactory,
     TableFunctionSplitGenerator splitGenerator) {
   auto sanitizedName = exec::sanitizeName(name);
   tableFunctions().insert(
@@ -53,7 +54,8 @@ bool registerTableFunction(
        {std::move(argumentsSpec),
         std::move(returnSpec),
         std::move(analyzer),
-        std::move(factory),
+        std::move(dataProcessorfactory),
+        std::move(splitProcessorfactory),
         std::move(splitGenerator)}});
   return true;
 }
@@ -76,7 +78,18 @@ TableArgumentSpecList getTableFunctionArgumentSpecs(const std::string& name) {
   }
 }
 
-std::unique_ptr<TableFunction> TableFunction::create(
+std::unique_ptr<TableFunctionAnalysis> TableFunction::analyze(
+    const std::string& name,
+    const std::unordered_map<std::string, std::shared_ptr<Argument>>& args) {
+  // Lookup the function in the new registry first.
+  if (auto func = getTableFunctionEntry(name)) {
+    return func.value()->analyzer(args);
+  }
+
+  VELOX_USER_FAIL("Table function not registered: {}", name);
+}
+
+std::unique_ptr<TableFunctionDataProcessor> TableFunction::createDataProcessor(
     const std::string& name,
     const std::shared_ptr<const TableFunctionHandle>& handle,
     memory::MemoryPool* pool,
@@ -84,18 +97,24 @@ std::unique_ptr<TableFunction> TableFunction::create(
     const core::QueryConfig& config) {
   // Lookup the function in the new registry first.
   if (auto func = getTableFunctionEntry(name)) {
-    return func.value()->factory(handle, pool, stringAllocator, config);
+    return func.value()->dataProcessorFactory(
+        handle, pool, stringAllocator, config);
   }
 
   VELOX_USER_FAIL("Table function not registered: {}", name);
 }
 
-std::unique_ptr<TableFunctionAnalysis> TableFunction::analyze(
+std::unique_ptr<TableFunctionSplitProcessor>
+TableFunction::createSplitProcessor(
     const std::string& name,
-    const std::unordered_map<std::string, std::shared_ptr<Argument>>& args) {
+    const std::shared_ptr<const TableFunctionHandle>& handle,
+    memory::MemoryPool* pool,
+    HashStringAllocator* stringAllocator,
+    const core::QueryConfig& config) {
   // Lookup the function in the new registry first.
   if (auto func = getTableFunctionEntry(name)) {
-    return func.value()->analyzer(args);
+    return func.value()->splitProcessorFactory(
+        handle, pool, stringAllocator, config);
   }
 
   VELOX_USER_FAIL("Table function not registered: {}", name);

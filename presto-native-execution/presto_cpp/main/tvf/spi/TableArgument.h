@@ -39,4 +39,7 @@ class TableArgumentSpecification : public ArgumentSpecification {
       : ArgumentSpecification(name, required){};
 };
 
+using TableArgumentSpecList =
+    std::unordered_set<std::shared_ptr<ArgumentSpecification>>;
+
 } // namespace facebook::presto::tvf

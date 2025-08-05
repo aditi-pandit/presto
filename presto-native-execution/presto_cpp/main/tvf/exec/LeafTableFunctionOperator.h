@@ -55,9 +55,7 @@ class LeafTableFunctionOperator : public velox::exec::SourceOperator {
     return spillConfig_.has_value();
   }
 
-  void createTableFunction(
-      const std::shared_ptr<const TableFunctionProcessorNode>&
-          tableFunctionNode);
+  void createTableFunctionSplitProcessor();
 
   void clear();
 
@@ -72,8 +70,8 @@ class LeafTableFunctionOperator : public velox::exec::SourceOperator {
 
   std::shared_ptr<TableFunctionResult> result_;
 
-  // This should be constructed for each partition.
-  std::unique_ptr<TableFunction> function_;
+  // This should be constructed for each split.
+  std::unique_ptr<TableFunctionSplitProcessor> splitProcessor_;
 
   bool noMoreSplits_ = false;
   std::shared_ptr<TableFunctionSplit> currentSplit_;

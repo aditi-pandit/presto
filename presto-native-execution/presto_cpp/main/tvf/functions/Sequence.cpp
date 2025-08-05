@@ -123,12 +123,13 @@ class SequenceAnalysis : public TableFunctionAnalysis {
   explicit SequenceAnalysis() : TableFunctionAnalysis() {}
 };
 
-class Sequence : public TableFunction {
+class Sequence : public TableFunctionSplitProcessor {
  public:
   explicit Sequence(
       velox::memory::MemoryPool* pool,
       const SequenceHandle* handle)
-      : TableFunction(pool, nullptr), step_(handle->step()) {}
+      : TableFunctionSplitProcessor("sequence", pool, nullptr),
+        step_(handle->step()) {}
 
   static std::unique_ptr<TableFunctionAnalysis> analyze(
       const std::unordered_map<std::string, std::shared_ptr<Argument>>& args) {
@@ -243,11 +244,12 @@ void registerSequence(const std::string& name) {
       argSpecs,
       std::make_shared<DescribedTableReturnType>(returnType),
       Sequence::analyze,
-      [](const std::shared_ptr<const TableFunctionHandle>& handle,
+      TableFunction::defaultCreateDataProcessor,
+      [](const TableFunctionHandlePtr& handle,
          velox::memory::MemoryPool* pool,
          velox::HashStringAllocator* /*stringAllocator*/,
          const velox::core::QueryConfig& /*queryConfig*/)
-          -> std::unique_ptr<TableFunction> {
+          -> std::unique_ptr<TableFunctionSplitProcessor> {
         auto sequenceHandle = dynamic_cast<const SequenceHandle*>(handle.get());
         return std::make_unique<Sequence>(pool, sequenceHandle);
       },

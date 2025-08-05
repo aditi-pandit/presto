@@ -81,18 +81,17 @@ TableFunctionOperator::TableFunctionOperator(
 void TableFunctionOperator::initialize() {
   Operator::initialize();
   VELOX_CHECK_NOT_NULL(tableFunctionNode_);
-  createTableFunction(tableFunctionNode_);
 }
 
-void TableFunctionOperator::createTableFunction(
+void TableFunctionOperator::createTableFunctionDataProcessor(
     const std::shared_ptr<const TableFunctionProcessorNode>& node) {
-  function_ = TableFunction::create(
+  dataProcessor_ = TableFunction::createDataProcessor(
       node->functionName(),
       node->handle(),
       pool_,
       &stringAllocator_,
       operatorCtx_->driverCtx()->queryConfig());
-  VELOX_CHECK(function_);
+  VELOX_CHECK(dataProcessor_);
 }
 
 // Writing the code to add the input rows -> call TableFunction::process and
@@ -153,6 +152,7 @@ RowVectorPtr TableFunctionOperator::getOutput() {
         0))) {
     if (tablePartitionBuild_->hasNextPartition()) {
       tableFunctionPartition_ = tablePartitionBuild_->nextPartition();
+      createTableFunctionDataProcessor(tableFunctionNode_);
       numPartitionProcessedRows_ = 0;
     } else {
       // There is no partition to output.
@@ -166,8 +166,8 @@ RowVectorPtr TableFunctionOperator::getOutput() {
     assembleInput();
   }
 
-  VELOX_CHECK(function_);
-  auto result = function_->apply({input_});
+  VELOX_CHECK(dataProcessor_);
+  auto result = dataProcessor_->apply({input_});
   if (result->state() == TableFunctionResult::TableFunctionState::kFinished) {
     // Skip the rest of this partition processing.
     numProcessedRows_ +=

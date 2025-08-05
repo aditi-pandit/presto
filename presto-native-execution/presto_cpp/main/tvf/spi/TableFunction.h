@@ -29,17 +29,15 @@
 
 namespace facebook::presto::tvf {
 
-using TableArgumentSpecList =
-    std::unordered_set<std::shared_ptr<ArgumentSpecification>>;
-
-class TableFunction {
+class TableFunctionDataProcessor {
  public:
-  explicit TableFunction(
+  explicit TableFunctionDataProcessor(
+      const std::string& name,
       velox::memory::MemoryPool* pool,
       velox::HashStringAllocator* stringAllocator)
-      : pool_(pool), stringAllocator_(stringAllocator) {}
+      : name_(name), pool_(pool), stringAllocator_(stringAllocator) {}
 
-  virtual ~TableFunction() = default;
+  virtual ~TableFunctionDataProcessor() = default;
 
   velox::memory::MemoryPool* pool() const {
     return pool_;
@@ -49,25 +47,93 @@ class TableFunction {
     return stringAllocator_;
   }
 
-  static std::unique_ptr<TableFunction> create(
-      const std::string& name,
-      const std::shared_ptr<const TableFunctionHandle>& handle,
-      velox::memory::MemoryPool* pool,
-      velox::HashStringAllocator* stringAllocator,
-      const velox::core::QueryConfig& config);
-
-  static std::unique_ptr<TableFunctionAnalysis> analyze(
-      const std::string& name,
-      const std::unordered_map<std::string, std::shared_ptr<Argument>>& args);
+  const std::string name() const {
+    return name_;
+  }
 
   virtual std::shared_ptr<TableFunctionResult> apply(
       const std::vector<velox::RowVectorPtr>& input) {
     VELOX_NYI(" TableFunction::apply() for input vector is not implemented");
   }
 
+ protected:
+  const std::string name_;
+  velox::memory::MemoryPool* pool_;
+  velox::HashStringAllocator* const stringAllocator_;
+};
+
+class TableFunctionSplitProcessor {
+ public:
+  explicit TableFunctionSplitProcessor(
+      const std::string& name,
+      velox::memory::MemoryPool* pool,
+      velox::HashStringAllocator* stringAllocator)
+      : pool_(pool), stringAllocator_(stringAllocator) {}
+
+  virtual ~TableFunctionSplitProcessor() = default;
+
+  velox::memory::MemoryPool* pool() const {
+    return pool_;
+  }
+
+  const velox::HashStringAllocator* stringAllocator() const {
+    return stringAllocator_;
+  }
+
+  const std::string name() const {
+    return name_;
+  }
+
   virtual std::shared_ptr<TableFunctionResult> apply(
       const TableSplitHandlePtr& split) {
     VELOX_NYI(" TableFunction::apply() for split is not implemented");
+  }
+
+ protected:
+  const std::string name_;
+  velox::memory::MemoryPool* pool_;
+  velox::HashStringAllocator* const stringAllocator_;
+};
+
+class TableFunction {
+ public:
+  explicit TableFunction(){};
+
+  virtual ~TableFunction() = default;
+
+  static std::unique_ptr<TableFunctionAnalysis> analyze(
+      const std::string& name,
+      const std::unordered_map<std::string, std::shared_ptr<Argument>>& args);
+
+  static std::unique_ptr<TableFunctionDataProcessor> createDataProcessor(
+      const std::string& name,
+      const TableFunctionHandlePtr& handle,
+      velox::memory::MemoryPool* pool,
+      velox::HashStringAllocator* stringAllocator,
+      const velox::core::QueryConfig& config);
+
+  static std::unique_ptr<TableFunctionDataProcessor> defaultCreateDataProcessor(
+      const TableFunctionHandlePtr& /* handle */,
+      velox::memory::MemoryPool* /* pool */,
+      velox::HashStringAllocator* /* stringAllocator */,
+      const velox::core::QueryConfig& /* config */) {
+    VELOX_NYI("TableFunction::createDataProcessor is not implemented");
+  }
+
+  static std::unique_ptr<TableFunctionSplitProcessor> createSplitProcessor(
+      const std::string& name,
+      const TableFunctionHandlePtr& handle,
+      velox::memory::MemoryPool* pool,
+      velox::HashStringAllocator* stringAllocator,
+      const velox::core::QueryConfig& config);
+
+  static std::unique_ptr<TableFunctionSplitProcessor>
+  defaultCreateSplitProcessor(
+      const TableFunctionHandlePtr& /* handle */,
+      velox::memory::MemoryPool* /* pool */,
+      velox::HashStringAllocator* /* stringAllocator */,
+      const velox::core::QueryConfig& /* config */) {
+    VELOX_NYI("TableFunction::createSplitProcessor is not implemented");
   }
 
   static std::vector<const TableSplitHandlePtr> getSplits(
@@ -78,28 +144,26 @@ class TableFunction {
       const TableFunctionHandlePtr& /* handle */) {
     VELOX_NYI("TableFunction::getSplits is not implemented");
   }
-
- protected:
-  velox::memory::MemoryPool* pool_;
-  velox::HashStringAllocator* const stringAllocator_;
 };
-
-/// Information from the Table operator that is useful for the function logic.
-/// @param args  Vector of the input arguments to the function. These could be
-/// constants or positions of the input argument column in the input row of the
-/// operator. These indices are used to access data from the WindowPartition
-/// object.
-/// @param resultType  Type of the result of the function.
-using TableFunctionFactory = std::function<std::unique_ptr<TableFunction>(
-    const TableFunctionHandlePtr& handle,
-    velox::memory::MemoryPool* pool,
-    velox::HashStringAllocator* stringAllocator,
-    const velox::core::QueryConfig& config)>;
 
 using TableFunctionAnalyzer =
     std::function<std::unique_ptr<TableFunctionAnalysis>(
         const std::unordered_map<std::string, std::shared_ptr<Argument>>&
             args)>;
+
+using TableFunctionDataProcessorFactory =
+    std::function<std::unique_ptr<TableFunctionDataProcessor>(
+        const TableFunctionHandlePtr& handle,
+        velox::memory::MemoryPool* pool,
+        velox::HashStringAllocator* stringAllocator,
+        const velox::core::QueryConfig& config)>;
+
+using TableFunctionSplitProcessorFactory =
+    std::function<std::unique_ptr<TableFunctionSplitProcessor>(
+        const TableFunctionHandlePtr& handle,
+        velox::memory::MemoryPool* pool,
+        velox::HashStringAllocator* stringAllocator,
+        const velox::core::QueryConfig& config)>;
 
 using TableFunctionSplitGenerator =
     std::function<std::vector<const TableSplitHandlePtr>(
@@ -109,7 +173,8 @@ struct TableFunctionEntry {
   TableArgumentSpecList argumentsSpec;
   ReturnSpecPtr returnSpec;
   TableFunctionAnalyzer analyzer;
-  TableFunctionFactory factory;
+  TableFunctionDataProcessorFactory dataProcessorFactory;
+  TableFunctionSplitProcessorFactory splitProcessorFactory;
   TableFunctionSplitGenerator splitGenerator;
 };
 
@@ -121,11 +186,13 @@ bool registerTableFunction(
     TableArgumentSpecList argumentsSpec,
     ReturnSpecPtr returnSpec,
     TableFunctionAnalyzer analyzer,
-    TableFunctionFactory factory,
+    TableFunctionDataProcessorFactory dataProcessorFactory =
+        TableFunction::defaultCreateDataProcessor,
+    TableFunctionSplitProcessorFactory splitProcessorFactory =
+        TableFunction::defaultCreateSplitProcessor,
     TableFunctionSplitGenerator splitGenerator =
         TableFunction::defaultGetSplits);
 
-// Returning a pointer since it can be dynamic cast.
 ReturnSpecPtr getTableFunctionReturnType(const std::string& name);
 
 TableArgumentSpecList getTableFunctionArgumentSpecs(const std::string& name);

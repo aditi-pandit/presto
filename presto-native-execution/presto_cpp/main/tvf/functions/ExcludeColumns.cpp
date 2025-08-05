@@ -59,11 +59,33 @@ class ExcludeColumnsAnalysis : public TableFunctionAnalysis {
 static const std::string TABLE_ARGUMENT_NAME = "INPUT";
 static const std::string DESCRIPTOR_ARGUMENT_NAME = "COLUMNS";
 
+class ExcludeColumnsDataProcessor : public TableFunctionDataProcessor {
+ public:
+  explicit ExcludeColumnsDataProcessor(
+      const ExcludeColumnsHandle* handle,
+      memory::MemoryPool* pool)
+      : TableFunctionDataProcessor("exclude_columns", pool, nullptr),
+        handle_(handle) {}
+
+  std::shared_ptr<TableFunctionResult> apply(
+      const std::vector<RowVectorPtr>& input) override {
+    auto inputTable = input.at(0);
+    auto numRows = inputTable->size();
+    if (numRows == 0) {
+      return std::make_shared<TableFunctionResult>(
+          TableFunctionResult::TableFunctionState::kFinished);
+    }
+
+    // Get a projection of non-excluded columns from inputTable.
+    return std::make_shared<TableFunctionResult>(true, std::move(inputTable));
+  }
+
+ private:
+  const ExcludeColumnsHandle* handle_;
+};
+
 class ExcludeColumns : public TableFunction {
  public:
-  explicit ExcludeColumns(memory::MemoryPool* pool)
-      : TableFunction(pool, nullptr) {}
-
   static std::unique_ptr<ExcludeColumnsAnalysis> analyze(
       const std::unordered_map<std::string, std::shared_ptr<Argument>>& args) {
     VELOX_CHECK_GT(
@@ -121,19 +143,6 @@ class ExcludeColumns : public TableFunction {
     return std::move(analysis);
   }
 
-  std::shared_ptr<TableFunctionResult> apply(
-      const std::vector<RowVectorPtr>& input) override {
-    auto inputTable = input.at(0);
-    auto numRows = inputTable->size();
-    if (numRows == 0) {
-      return std::make_shared<TableFunctionResult>(
-          TableFunctionResult::TableFunctionState::kFinished);
-    }
-
-    // Get a projection of non-excluded columns from inputTableß
-    return std::make_shared<TableFunctionResult>(true, std::move(inputTable));
-  }
-
   velox::RowTypePtr returnType_;
   const SelectivityVector inputSelections_;
 };
@@ -150,14 +159,15 @@ void registerExcludeColumns(const std::string& name) {
       argSpecs,
       std::make_shared<GenericTableReturnType>(),
       ExcludeColumns::analyze,
-      [](const std::shared_ptr<const TableFunctionHandle>& handle,
+      [](const TableFunctionHandlePtr& handle,
          memory::MemoryPool* pool,
          HashStringAllocator* /*stringAllocator*/,
          const core::QueryConfig& /*queryConfig*/)
-          -> std::unique_ptr<TableFunction> {
+          -> std::unique_ptr<TableFunctionDataProcessor> {
         auto excludeHandle =
             dynamic_cast<const ExcludeColumnsHandle*>(handle.get());
-        return std::make_unique<ExcludeColumns>(pool);
+        return std::make_unique<ExcludeColumnsDataProcessor>(
+            excludeHandle, pool);
       });
   ExcludeColumnsHandle::registerSerDe();
 }

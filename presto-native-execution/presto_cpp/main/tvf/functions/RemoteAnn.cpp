@@ -26,10 +26,10 @@ class RemoteAnnAnalysis : public TableFunctionAnalysis {
   explicit RemoteAnnAnalysis() : TableFunctionAnalysis() {}
 };
 
-class RemoteAnn : public TableFunction {
+class RemoteAnnDataProcessor : public TableFunctionDataProcessor {
  public:
-  explicit RemoteAnn(velox::memory::MemoryPool* pool)
-      : TableFunction(pool, nullptr) {}
+  explicit RemoteAnnDataProcessor(velox::memory::MemoryPool* pool)
+      : TableFunctionDataProcessor("remote_ann", pool, nullptr) {}
 
   std::shared_ptr<TableFunctionResult> apply(
       const std::vector<velox::RowVectorPtr>& input) override {
@@ -52,8 +52,8 @@ void registerRemoteAnn(const std::string& name) {
          velox::memory::MemoryPool* pool,
          velox::HashStringAllocator* /*stringAllocator*/,
          const velox::core::QueryConfig& /*queryConfig*/)
-          -> std::unique_ptr<TableFunction> {
-        return std::make_unique<RemoteAnn>(pool);
+          -> std::unique_ptr<TableFunctionDataProcessor> {
+        return std::make_unique<RemoteAnnDataProcessor>(pool);
       });
 }
 

@@ -65,7 +65,7 @@ class TableFunctionOperator : public velox::exec::Operator {
     return spillConfig_.has_value();
   }
 
-  void createTableFunction(
+  void createTableFunctionDataProcessor(
       const std::shared_ptr<const TableFunctionProcessorNode>&
           tableFunctionNode);
 
@@ -93,7 +93,7 @@ class TableFunctionOperator : public velox::exec::Operator {
   velox::RowVectorPtr input_;
 
   // This should be constructed for each partition.
-  std::unique_ptr<TableFunction> function_;
+  std::unique_ptr<TableFunctionDataProcessor> dataProcessor_;
 
   velox::vector_size_t numRows_ = 0;
   velox::vector_size_t numProcessedRows_ = 0;

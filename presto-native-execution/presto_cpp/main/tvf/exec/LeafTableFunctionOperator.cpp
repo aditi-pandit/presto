@@ -48,20 +48,18 @@ LeafTableFunctionOperator::LeafTableFunctionOperator(
 void LeafTableFunctionOperator::initialize() {
   Operator::initialize();
   VELOX_CHECK_NOT_NULL(tableFunctionNode_);
-  createTableFunction(tableFunctionNode_);
   // TODO: Why was this needed
   // tableFunctionNode_.reset();
 }
 
-void LeafTableFunctionOperator::createTableFunction(
-    const std::shared_ptr<const TableFunctionProcessorNode>& node) {
-  function_ = TableFunction::create(
-      node->functionName(),
-      node->handle(),
+void LeafTableFunctionOperator::createTableFunctionSplitProcessor() {
+  splitProcessor_ = TableFunction::createSplitProcessor(
+      tableFunctionNode_->functionName(),
+      tableFunctionNode_->handle(),
       pool_,
       &stringAllocator_,
       operatorCtx_->driverCtx()->queryConfig());
-  VELOX_CHECK(function_);
+  VELOX_CHECK(splitProcessor_);
 }
 
 RowVectorPtr LeafTableFunctionOperator::getOutput() {
@@ -92,6 +90,8 @@ RowVectorPtr LeafTableFunctionOperator::getOutput() {
     currentSplit_ =
         std::dynamic_pointer_cast<TableFunctionSplit>(split.connectorSplit);
     VELOX_CHECK(currentSplit_, "Invalid Table Function Split");
+
+    createTableFunctionSplitProcessor();
   }
 
   // This split could be one retrieved above or a incompletely processed one
@@ -99,11 +99,12 @@ RowVectorPtr LeafTableFunctionOperator::getOutput() {
   VELOX_CHECK_NOT_NULL(currentSplit_, "No split to process.");
 
   // GetOutput from table function.
-  VELOX_CHECK(function_);
-  auto result = function_->apply(currentSplit_->splitHandle());
+  VELOX_CHECK(splitProcessor_);
+  auto result = splitProcessor_->apply(currentSplit_->splitHandle());
   if (result->state() == TableFunctionResult::TableFunctionState::kFinished) {
     // Clear the split as the input rows are completely consumed.
     currentSplit_ = nullptr;
+    splitProcessor_ = nullptr;
     return nullptr;
   }
 
