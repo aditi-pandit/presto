@@ -1618,6 +1618,15 @@ public class TestLogicalPlanner
                                                         .withAlias("row_num", new RowNumberSymbolMatcher()))))));
     }
 
+    public void testRewriteExcludeColumnsFunctionToProjection()
+    {
+        assertPlan("SELECT *\n" +
+                        "FROM TABLE(system.builtin.exclude_columns(\n" +
+                        "    INPUT => TABLE(orders),\n" +
+                        "    COLUMNS => DESCRIPTOR(comment)))\n",
+                output(tableScan("orders")));
+    }
+
     private Session noJoinReordering()
     {
         return Session.builder(this.getQueryRunner().getDefaultSession())

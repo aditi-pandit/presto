@@ -74,11 +74,18 @@
 #include "presto_cpp/main/RemoteFunctionRegisterer.h"
 #endif
 
+// #ifdef PRESTO_ENABLE_TABLE_FUNCTIONS
+#include "presto_cpp/main/tvf/exec/TableFunctionOperator.h"
+#include "presto_cpp/main/tvf/exec/TableFunctionTranslator.h"
+#include "presto_cpp/main/tvf/functions/TableFunctionsRegistration.h"
+// #endif
+
 #ifdef __linux__
 // Required by BatchThreadFactory
 #include <pthread.h>
 #include <sched.h>
 #endif
+#include <iostream>
 
 using namespace facebook;
 
@@ -378,6 +385,59 @@ void PrestoServer::run() {
                 http::kMimeTypeApplicationJson)
             .sendWithEOM();
       });
+  httpServer_->registerGet(
+      "/v1/functions/tvf",
+      [](proxygen::HTTPMessage* /*message*/,
+         const std::vector<std::unique_ptr<folly::IOBuf>>& /*body*/,
+         proxygen::ResponseHandler* downstream) {
+        http::sendOkResponse(downstream, getTableValuedFunctionsMetadata());
+      });
+  httpServer_->registerPost(
+      "/v1/tvf/analyze",
+      [server = this](
+          proxygen::HTTPMessage* message,
+          const std::vector<std::unique_ptr<folly::IOBuf>>& body,
+          proxygen::ResponseHandler* downstream) {
+        std::string connectorTableMetadataJson = util::extractMessageBody(body);
+
+        try {
+          protocol::ConnectorTableMetadata1 connectorTableMetadata;
+          protocol::from_json(
+              json::parse(connectorTableMetadataJson), connectorTableMetadata);
+          std::unordered_map<std::string, std::shared_ptr<tvf::Argument>> args;
+          for (const auto& entry : connectorTableMetadata.arguments) {
+            std::shared_ptr<tvf::Argument> arg;
+            if (auto scalarArgument =
+                    std::dynamic_pointer_cast<protocol::ScalarArgument>(
+                        entry.second)) {
+              auto serializableNullableValue =
+                  scalarArgument->nullableValue.serializable;
+              // arg = std::make_shared<tvf::ScalarArgument>(
+              //   serializableNullableValue.type,
+              //   serializableNullableValue.block);
+              arg = nullptr;
+            } else if (
+                auto tableArgument =
+                    std::dynamic_pointer_cast<protocol::TableArgument>(
+                        entry.second)) {
+              // arg =
+              // std::make_shared<tvf::TableArgument>(tableArgument->rowType);
+              // TODO : Need code here to parse partition and order by expressions.
+              arg = nullptr;
+            } else if (std::dynamic_pointer_cast<protocol::DescriptorArgument>(
+                           entry.second)) {
+              arg = nullptr;
+            } else {
+              VELOX_FAIL("Failed to convert to a valid Argument");
+            }
+            args[entry.first] = arg;
+          }
+          tvf::TableFunction::analyze(connectorTableMetadata.name, args);
+        } catch (const std::exception& e) {
+          std::cerr << "JSON type error: " << e.what() << std::endl;
+        };
+        http::sendOkResponse(downstream, json("response"));
+      });
 
   if (systemConfig->enableRuntimeMetricsCollection()) {
     enableWorkerStatsReporting();
@@ -400,45 +460,6 @@ void PrestoServer::run() {
   registerVectorSerdes();
   registerPrestoPlanNodeSerDe();
   registerDynamicFunctions();
-
-  const auto numExchangeHttpClientIoThreads = std::max<size_t>(
-      systemConfig->exchangeHttpClientNumIoThreadsHwMultiplier() *
-          std::thread::hardware_concurrency(),
-      1);
-  exchangeHttpIoExecutor_ = std::make_shared<folly::IOThreadPoolExecutor>(
-      numExchangeHttpClientIoThreads,
-      std::make_shared<folly::NamedThreadFactory>("ExchangeIO"));
-
-  PRESTO_STARTUP_LOG(INFO) << "Exchange Http IO executor '"
-                           << exchangeHttpIoExecutor_->getName() << "' has "
-                           << exchangeHttpIoExecutor_->numThreads()
-                           << " threads.";
-  for (auto evb : exchangeHttpIoExecutor_->getAllEventBases()) {
-    evb->setMaxLatency(
-        std::chrono::milliseconds(systemConfig->exchangeIoEvbViolationThresholdMs()),
-        []() { RECORD_METRIC_VALUE(kCounterExchangeIoEvbViolation, 1); },
-        /*dampen=*/false);
-  }
-
-  const auto numExchangeHttpClientCpuThreads = std::max<size_t>(
-      systemConfig->exchangeHttpClientNumCpuThreadsHwMultiplier() *
-          std::thread::hardware_concurrency(),
-      1);
-
-  exchangeHttpCpuExecutor_ = std::make_shared<folly::CPUThreadPoolExecutor>(
-      numExchangeHttpClientCpuThreads,
-      std::make_shared<folly::NamedThreadFactory>("ExchangeCPU"));
-
-  PRESTO_STARTUP_LOG(INFO) << "Exchange Http CPU executor '"
-                           << exchangeHttpCpuExecutor_->getName() << "' has "
-                           << exchangeHttpCpuExecutor_->numThreads()
-                           << " threads.";
-
-  if (systemConfig->exchangeEnableConnectionPool()) {
-    PRESTO_STARTUP_LOG(INFO) << "Enable exchange Http Client connection pool.";
-    exchangeSourceConnectionPool_ =
-        std::make_unique<http::HttpClientConnectionPool>();
-  }
 
   facebook::velox::exec::ExchangeSource::registerFactory(
       [this](
@@ -854,6 +875,45 @@ void PrestoServer::initializeThreadPools() {
     spillerExecutor_ = std::make_shared<folly::CPUThreadPoolExecutor>(
         numSpillerCpuThreads,
         std::make_shared<folly::NamedThreadFactory>("Spiller"));
+  }
+
+  const auto numExchangeHttpClientIoThreads = std::max<size_t>(
+      systemConfig->exchangeHttpClientNumIoThreadsHwMultiplier() *
+          std::thread::hardware_concurrency(),
+      1);
+  exchangeHttpIoExecutor_ = std::make_shared<folly::IOThreadPoolExecutor>(
+      numExchangeHttpClientIoThreads,
+      std::make_shared<folly::NamedThreadFactory>("ExchangeIO"));
+
+  PRESTO_STARTUP_LOG(INFO) << "Exchange Http IO executor '"
+                           << exchangeHttpIoExecutor_->getName() << "' has "
+                           << exchangeHttpIoExecutor_->numThreads()
+                           << " threads.";
+  for (auto evb : exchangeHttpIoExecutor_->getAllEventBases()) {
+    evb->setMaxLatency(
+        std::chrono::milliseconds(systemConfig->exchangeIoEvbViolationThresholdMs()),
+        []() { RECORD_METRIC_VALUE(kCounterExchangeIoEvbViolation, 1); },
+        /*dampen=*/false);
+  }
+
+  const auto numExchangeHttpClientCpuThreads = std::max<size_t>(
+      systemConfig->exchangeHttpClientNumCpuThreadsHwMultiplier() *
+          std::thread::hardware_concurrency(),
+      1);
+
+  exchangeHttpCpuExecutor_ = std::make_shared<folly::CPUThreadPoolExecutor>(
+      numExchangeHttpClientCpuThreads,
+      std::make_shared<folly::NamedThreadFactory>("ExchangeCPU"));
+
+  PRESTO_STARTUP_LOG(INFO) << "Exchange Http CPU executor '"
+                           << exchangeHttpCpuExecutor_->getName() << "' has "
+                           << exchangeHttpCpuExecutor_->numThreads()
+                           << " threads.";
+
+  if (systemConfig->exchangeEnableConnectionPool()) {
+    PRESTO_STARTUP_LOG(INFO) << "Enable exchange Http Client connection pool.";
+    exchangeSourceConnectionPool_ =
+        std::make_unique<http::HttpClientConnectionPool>();
   }
 }
 
@@ -1324,6 +1384,12 @@ void PrestoServer::registerFunctions() {
       prestoBuiltinFunctionPrefix_);
   velox::window::prestosql::registerAllWindowFunctions(
       prestoBuiltinFunctionPrefix_);
+
+  // #ifdef PRESTO_ENABLE_TABLE_FUNCTIONS
+  velox::exec::Operator::registerOperator(
+      std::make_unique<tvf::TableFunctionTranslator>());
+  tvf::registerAllTableFunctions(prestoBuiltinFunctionPrefix_);
+  // #endif
 }
 
 void PrestoServer::registerRemoteFunctions() {

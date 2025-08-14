@@ -230,6 +230,11 @@ class SystemConfig : public ConfigBase {
   static constexpr std::string_view kConnectorNumIoThreadsHwMultiplier{
       "connector.num-io-threads-hw-multiplier"};
 
+  /// Maximum number of splits to preload per driver.
+  /// Set to 0 to disable preloading.
+  static constexpr std::string_view kDriverMaxSplitPreload{
+      "driver.max-split-preload"};
+
   /// Floating point number used in calculating how many threads we would use
   /// for Driver CPU executor: hw_concurrency x multiplier. 4.0 is default.
   static constexpr std::string_view kDriverNumCpuThreadsHwMultiplier{
@@ -755,6 +760,9 @@ class SystemConfig : public ConfigBase {
   static constexpr std::string_view kHttpSrvIoEvbViolationThresholdMs{
       "http-server.io-evb-violation-threshold-ms"};
 
+  static constexpr std::string_view kMaxLocalExchangePartitionBufferSize{
+      "local-exchange.max-partition-buffer-size"};
+
   SystemConfig();
 
   virtual ~SystemConfig() = default;
@@ -811,6 +819,8 @@ class SystemConfig : public ConfigBase {
   std::string remoteFunctionServerSerde() const;
 
   int32_t maxDriversPerTask() const;
+
+  int32_t driverMaxSplitPreload() const;
 
   folly::Optional<int32_t> taskWriterCount() const;
 
@@ -1035,6 +1045,8 @@ class SystemConfig : public ConfigBase {
   int32_t exchangeIoEvbViolationThresholdMs() const;
 
   int32_t httpSrvIoEvbViolationThresholdMs() const;
+
+  uint64_t maxLocalExchangePartitionBufferSize() const;
 };
 
 /// Provides access to node properties defined in node.properties file.
