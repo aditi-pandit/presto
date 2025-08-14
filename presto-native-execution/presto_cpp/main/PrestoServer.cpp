@@ -422,6 +422,7 @@ void PrestoServer::run() {
                         entry.second)) {
               // arg =
               // std::make_shared<tvf::TableArgument>(tableArgument->rowType);
+              // TODO : Need code here to parse partition and order by expressions.
               arg = nullptr;
             } else if (std::dynamic_pointer_cast<protocol::DescriptorArgument>(
                            entry.second)) {

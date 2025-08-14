@@ -304,9 +304,9 @@ buildArgumentSpecsList(TableArgumentSpecList argumentsSpec) {
       auto tableArgumentSpecification =
           std::make_shared<protocol::TableArgumentSpecification>();
       tableArgumentSpecification->name = tableArgumentSpec->name();
-      tableArgumentSpecification->passThroughColumns = false;
-      tableArgumentSpecification->pruneWhenEmpty = true;
-      tableArgumentSpecification->rowSemantics = true;
+      tableArgumentSpecification->passThroughColumns = tableArgumentSpec->passThroughColumns();
+      tableArgumentSpecification->pruneWhenEmpty = tableArgumentSpec->pruneWhenEmpty();
+      tableArgumentSpecification->rowSemantics = tableArgumentSpec->rowSemantics();
       argumentsSpecsList.emplace_back(tableArgumentSpecification);
     } else if (
         auto descriptorArgumentSpec =

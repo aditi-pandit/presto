@@ -23,20 +23,82 @@ namespace facebook::presto::tvf {
 
 class TableArgument : public Argument {
  public:
-  TableArgument(velox::RowTypePtr type) : rowType_(std::move(type)) {}
+  TableArgument(velox::RowTypePtr type,
+                std::vector<velox::core::FieldAccessTypedExprPtr> partitionKeys = {},
+                std::vector<velox::core::FieldAccessTypedExprPtr> sortingKeys = {},
+                std::vector<velox::core::SortOrder> sortingOrders = {})
+      : rowType_(std::move(type)),
+        partitionKeys_(std::move(partitionKeys)),
+        sortingKeys_(std::move(sortingKeys)),
+        sortingOrders_(std::move(sortingOrders)) {
+    VELOX_CHECK_EQ(
+        sortingKeys_.size(),
+        sortingOrders_.size(),
+        "Number of sorting keys must be equal to the number of sorting orders");
 
-  velox::RowTypePtr rowType() {
+    std::unordered_set<std::string> keyNames;
+    for (const auto& key : partitionKeys_) {
+      VELOX_USER_CHECK(
+          keyNames.insert(key->name()).second,
+          "Partitioning keys must be unique. Found duplicate key: {}",
+          key->name());
+    }
+
+    for (const auto& key : sortingKeys_) {
+      VELOX_USER_CHECK(
+          keyNames.insert(key->name()).second,
+          "Sorting keys must be unique and not overlap with partitioning keys. Found duplicate key: {}",
+          key->name());
+    }
+  }
+
+  velox::RowTypePtr rowType() const {
     return rowType_;
+  }
+
+  const std::vector<velox::core::FieldAccessTypedExprPtr>& partitionKeys() const {
+    return partitionKeys_;
+  }
+
+  const std::vector<velox::core::FieldAccessTypedExprPtr>& sortingKeys() const {
+    return sortingKeys_;
+  }
+
+  const std::vector<velox::core::SortOrder>& sortingOrders() const {
+    return sortingOrders_;
   }
 
  private:
   const velox::RowTypePtr rowType_;
+  const std::vector<velox::core::FieldAccessTypedExprPtr> partitionKeys_;
+  const std::vector<velox::core::FieldAccessTypedExprPtr> sortingKeys_;
+  const std::vector<velox::core::SortOrder> sortingOrders_;
 };
 
 class TableArgumentSpecification : public ArgumentSpecification {
  public:
-  TableArgumentSpecification(std::string name, bool required)
-      : ArgumentSpecification(name, required){};
+  TableArgumentSpecification(std::string name, bool rowSemantics, bool pruneWhenEmpty, bool passThroughColumns)
+      : ArgumentSpecification(name, true),
+        rowSemantics_(rowSemantics),
+        pruneWhenEmpty_(pruneWhenEmpty),
+        passThroughColumns_(passThroughColumns) {};
+
+  bool rowSemantics() const {
+    return rowSemantics_;
+  }
+
+  bool pruneWhenEmpty() const {
+    return pruneWhenEmpty_;
+  }
+
+  bool passThroughColumns() const {
+    return passThroughColumns_;
+  }
+
+ private:
+  const bool rowSemantics_;
+  const bool pruneWhenEmpty_;
+  const bool passThroughColumns_;
 };
 
 using TableArgumentSpecList =

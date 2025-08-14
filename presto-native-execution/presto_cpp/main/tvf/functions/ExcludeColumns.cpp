@@ -151,7 +151,7 @@ class ExcludeColumns : public TableFunction {
 void registerExcludeColumns(const std::string& name) {
   TableArgumentSpecList argSpecs;
   argSpecs.insert(
-      std::make_shared<TableArgumentSpecification>(TABLE_ARGUMENT_NAME, true));
+      std::make_shared<TableArgumentSpecification>(TABLE_ARGUMENT_NAME, true, true, false));
   argSpecs.insert(std::make_shared<DescriptorArgumentSpecification>(
       DESCRIPTOR_ARGUMENT_NAME, Descriptor({"columns"}), true));
   registerTableFunction(
