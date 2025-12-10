@@ -269,7 +269,6 @@ public class FunctionAndTypeManager
                     QualifiedObjectName functionName,
                     List<TypeSignatureProvider> parameterTypes)
             {
-
                 return FunctionAndTypeManager.this.resolveFunction(sessionFunctions, transactionId, functionName, parameterTypes);
             }
 
