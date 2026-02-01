@@ -15,8 +15,14 @@ package com.facebook.presto.nativeworker;
 
 import com.facebook.airlift.log.Logger;
 import com.facebook.airlift.log.Logging;
+import com.facebook.presto.Session;
+import static com.facebook.presto.nativeworker.AbstractTestNativeTpcdsQueries.*;
 import com.facebook.presto.testing.QueryRunner;
 import com.facebook.presto.tests.DistributedQueryRunner;
+import com.facebook.presto.tpcds.TpcdsPlugin;
+
+import static com.facebook.presto.SystemSessionProperties.QUERY_MAX_EXECUTION_TIME;
+import static com.facebook.presto.SystemSessionProperties.QUERY_MAX_RUN_TIME;
 
 public class HiveExternalWorkerQueryRunner
 {
@@ -35,6 +41,7 @@ public class HiveExternalWorkerQueryRunner
 
         // Launch distributed runner.
         DistributedQueryRunner queryRunner = (DistributedQueryRunner) PrestoNativeQueryRunnerUtils.nativeHiveQueryRunnerBuilder().build();
+        //createTpcdsTables(queryRunner);
         Thread.sleep(10);
         Logger log = Logger.get(DistributedQueryRunner.class);
         log.info("======== SERVER STARTED ========");

@@ -291,20 +291,22 @@ public final class QueryAssertions
             if (!unexpectedRows.isEmpty()) {
                 int numShown = Math.min(limit, unexpectedRows.size());
                 extraRowsMessage = format(
-                        "Actual rows (%s of %s extra rows shown, %s rows in total):\n    %s\n",
+                        "Actual rows (%s of %s extra rows shown, %s rows in total):\n     %s\n\n\n    %s\n",
                         numShown,
                         unexpectedRows.size(),
                         actualSet.size(),
+                        Joiner.on("\n    ").join(Iterables.limit(actualSet, actualSet.size())),
                         Joiner.on("\n    ").join(Iterables.limit(unexpectedRows, limit)));
             }
             String missingRowsMessage = "";
             if (!missingRows.isEmpty()) {
                 int numShown = Math.min(limit, missingRows.size());
                 missingRowsMessage = format(
-                        "Expected rows (%s of %s missing rows shown, %s rows in total):\n    %s\n",
+                        "Expected rows (%s of %s missing rows shown, %s rows in total):\n     %s\n\n\n    %s\n",
                         numShown,
                         missingRows.size(),
                         expectedSet.size(),
+                        Joiner.on("\n    ").join(Iterables.limit(expectedSet, expectedSet.size())),
                         Joiner.on("\n    ").join(Iterables.limit(missingRows, limit)));
             }
             String rowsDiff = format(
