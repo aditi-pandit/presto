@@ -300,6 +300,8 @@ buildArgumentSpecsList(TableArgumentSpecList argumentsSpec) {
       scalarArgumentSpecification->required = scalarArgumentSpec->required();
       scalarArgumentSpecification->type =
           scalarArgumentSpec->rowType()->toString();
+      scalarArgumentSpecification->defaultValue =
+          scalarArgumentSpec->defaultValue();
       argumentsSpecsList.emplace_back(scalarArgumentSpecification);
     } else if (
         auto tableArgumentSpec =
@@ -308,9 +310,12 @@ buildArgumentSpecsList(TableArgumentSpecList argumentsSpec) {
       auto tableArgumentSpecification =
           std::make_shared<protocol::TableArgumentSpecification>();
       tableArgumentSpecification->name = tableArgumentSpec->name();
-      tableArgumentSpecification->passThroughColumns = false;
-      tableArgumentSpecification->pruneWhenEmpty = true;
-      tableArgumentSpecification->rowSemantics = true;
+      tableArgumentSpecification->passThroughColumns =
+          tableArgumentSpec->passThroughColumns();
+      tableArgumentSpecification->pruneWhenEmpty =
+          tableArgumentSpec->pruneWhenEmpty();
+      tableArgumentSpecification->rowSemantics =
+          tableArgumentSpec->rowSemantics();
       argumentsSpecsList.emplace_back(tableArgumentSpecification);
     } else if (
         auto descriptorArgumentSpec =
@@ -339,6 +344,13 @@ std::shared_ptr<protocol::ReturnTypeSpecification> buildReturnTypeSpecification(
         genericTableReturnTypeSpecification =
             std::make_shared<protocol::GenericTableReturnTypeSpecification>();
     return genericTableReturnTypeSpecification;
+  } else if (
+      returnTypeSpecification ==
+      ReturnTypeSpecification::ReturnType::kOnlyPassThrough) {
+    std::shared_ptr<protocol::OnlyPassThroughReturnTypeSpecification>
+        onlyPassThroughReturnTypeSpecification =
+            std::make_shared<protocol::OnlyPassThroughReturnTypeSpecification>();
+    return onlyPassThroughReturnTypeSpecification;
   } else {
     std::shared_ptr<protocol::DescribedTableReturnTypeSpecification>
         describedTableReturnTypeSpecification =
@@ -496,25 +508,36 @@ json getAnalyzedTableValueFunction(
     std::shared_ptr<tvf::Argument> functionArg;
     if (auto scalarArgument =
             std::dynamic_pointer_cast<protocol::ScalarArgument>(entry.second)) {
-      auto serializableNullableValue =
-          scalarArgument->nullableValue.serializable;
-      auto value = exprConverter.getConstantValue(
-          parser.parse(serializableNullableValue.type),
-          serializableNullableValue.block);
-      functionArg = std::make_shared<tvf::ScalarArgument>(
-          value.inferType(),
-          BaseVector::createConstant(
-              value.inferType(),
-              value,
-              serializableNullableValue.block.data.size(),
-              pool));
+      auto serializable = scalarArgument->nullableValue.serializable;
+      auto type = parser.parse(serializable.type);
+
+      // Handle case where block is missing/null for non-required arguments
+      if (serializable.block.data.empty()) {
+        // Create a null constant for missing/optional arguments
+        functionArg = std::make_shared<tvf::ScalarArgument>(
+            type, BaseVector::createNullConstant(type, 1, pool));
+      } else {
+        auto value = exprConverter.getConstantValue(type, serializable.block);
+        functionArg = std::make_shared<tvf::ScalarArgument>(
+            value.inferType(),
+            BaseVector::createConstant(
+                value.inferType(),
+                value,
+                serializable.block.data.size(),
+                pool));
+      }
     } else if (
         auto tableArgument =
             std::dynamic_pointer_cast<protocol::TableArgument>(entry.second)) {
       std::vector<std::string> fieldNames;
       std::vector<velox::TypePtr> fieldTypes;
       for (auto& arg : tableArgument->fields) {
-        fieldNames.push_back(boost::algorithm::to_lower_copy(*arg.name));
+        if (arg.name) {
+          fieldNames.push_back(boost::algorithm::to_lower_copy(*arg.name));
+        } else {
+          // Unable to add a null field name in C++
+          fieldNames.push_back("");
+        }
         fieldTypes.push_back(parser.parse(*arg.type));
       }
       functionArg = std::make_shared<tvf::TableArgument>(
@@ -523,15 +546,25 @@ json getAnalyzedTableValueFunction(
         auto descriptorArgument =
             std::dynamic_pointer_cast<protocol::DescriptorArgument>(
                 entry.second)) {
-      std::vector<std::string> fieldNames;
-      std::vector<velox::TypePtr> fieldTypes;
-      for (auto& arg : descriptorArgument->descriptor->fields) {
-        fieldNames.push_back(boost::algorithm::to_lower_copy(*arg.name));
-        // fieldTypes.push_back(parser.parse(*arg.type));
-      }
-      functionArg = std::make_shared<tvf::Descriptor>(std::move(fieldNames)
-                                                      //, std::move(fieldTypes)
-      );
+        if (!descriptorArgument->descriptor) {
+          // Null descriptor — pass nullptr so analyze() can produce a proper user error
+          functionArg = nullptr;
+        } else {
+          std::vector<std::string> fieldNames;
+          std::vector<velox::TypePtr> fieldTypes;
+          for (auto& arg : descriptorArgument->descriptor->fields) {
+            fieldNames.push_back(boost::algorithm::to_lower_copy(*arg.name));
+            if (arg.type) {
+              fieldTypes.push_back(parser.parse(*arg.type));
+            }
+          }
+          if (fieldTypes.size()) {
+            functionArg = std::make_shared<tvf::Descriptor>(std::move(fieldNames), std::move(fieldTypes));
+          } else {
+            functionArg = std::make_shared<tvf::Descriptor>(std::move(fieldNames));
+          }
+
+        }
     } else {
       VELOX_UNSUPPORTED("Failed to convert to a valid Argument");
     }

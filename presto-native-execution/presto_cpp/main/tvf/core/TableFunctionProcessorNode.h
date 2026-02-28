@@ -27,13 +27,19 @@ class TableFunctionProcessorNode : public velox::core::PlanNode {
     PassThroughColumnSpecification(
         bool isPartitioningColumn,
         velox::column_index_t inputChannel,
+        velox::column_index_t outputChannel,
         velox::column_index_t indexChannel)
         : isPartitioningColumn_(isPartitioningColumn),
           inputChannel_(inputChannel),
+          outputChannel_(outputChannel),
           indexChannel_(indexChannel) {}
 
     velox::column_index_t inputChannel() const {
       return inputChannel_;
+    }
+
+    velox::column_index_t outputChannel() const {
+      return outputChannel_;
     }
 
     velox::column_index_t indexChannel() const {
@@ -48,6 +54,7 @@ class TableFunctionProcessorNode : public velox::core::PlanNode {
       folly::dynamic obj = folly::dynamic::object;
       obj["isPartitioningColumn"] = isPartitioningColumn_;
       obj["inputChannel"] = inputChannel_;
+      obj["outputChannel"] = outputChannel_;
       obj["indexChannel"] = indexChannel_;
       return obj;
     }
@@ -57,12 +64,14 @@ class TableFunctionProcessorNode : public velox::core::PlanNode {
       return {
           obj["isPartitioningColumn"].asBool(),
           static_cast<velox::column_index_t>(obj["inputChannel"].asInt()),
+          static_cast<velox::column_index_t>(obj["outputChannel"].asInt()),
           static_cast<velox::column_index_t>(obj["indexChannel"].asInt())};
     }
 
    private:
     const bool isPartitioningColumn_;
     const velox::column_index_t inputChannel_;
+    const velox::column_index_t outputChannel_;
     const velox::column_index_t indexChannel_;
   };
 
@@ -76,7 +85,7 @@ class TableFunctionProcessorNode : public velox::core::PlanNode {
       bool pruneWhenEmpty,
       velox::RowTypePtr outputType,
       std::vector<std::vector<velox::column_index_t>> requiredColumns,
-      std::unordered_map<velox::column_index_t, velox::column_index_t>
+      std::vector<std::pair<velox::column_index_t, velox::column_index_t>>
           markerChannels,
       std::vector<PassThroughColumnSpecification> passThroughColumns,
       std::vector<velox::core::PlanNodePtr> sources);
@@ -131,8 +140,8 @@ class TableFunctionProcessorNode : public velox::core::PlanNode {
     return requiredColumns_;
   }
 
-  const std::unordered_map<velox::column_index_t, velox::column_index_t>&
-  markerChannels() const {
+  const std::vector<std::pair<velox::column_index_t, velox::column_index_t>>& markerChannels()
+      const {
     return markerChannels_;
   }
 
@@ -142,12 +151,7 @@ class TableFunctionProcessorNode : public velox::core::PlanNode {
   }
 
   bool requiresSplits() const override {
-    if (sources_.empty()) {
-      // This is a leaf operator that needs splits then.
-      return true;
-    }
-
-    return false;
+    return sources_.empty();
   }
 
   folly::dynamic serialize() const override;
@@ -173,7 +177,7 @@ class TableFunctionProcessorNode : public velox::core::PlanNode {
 
   const std::vector<std::vector<velox::column_index_t>> requiredColumns_;
 
-  const std::unordered_map<velox::column_index_t, velox::column_index_t>
+  const std::vector<std::pair<velox::column_index_t, velox::column_index_t>>
       markerChannels_;
 
   const std::vector<PassThroughColumnSpecification> passThroughColumns_;

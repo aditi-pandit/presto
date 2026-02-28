@@ -42,11 +42,10 @@ std::unique_ptr<SimpleTableFunctionAnalysis> SimpleTableFunction::analyze(
 
 void registerSimpleTableFunction(const std::string& name) {
   TableArgumentSpecList argSpecs;
-  argSpecs.insert(
-      std::make_shared<ScalarArgumentSpecification>("COLUMN", VARCHAR(), true));
-  argSpecs.insert(
-      std::make_shared<ScalarArgumentSpecification>(
-          "IGNORED", BIGINT(), false));
+  argSpecs.push_back(std::make_shared<ScalarArgumentSpecification>(
+      "COLUMN", VARCHAR(), true));
+  argSpecs.push_back(std::make_shared<ScalarArgumentSpecification>(
+      "IGNORED", BIGINT(), false));
 
   registerTableFunction(
       name,
@@ -77,7 +76,7 @@ std::unique_ptr<IdentityFunctionAnalysis> IdentityFunction::analyze(
     requiredColsList.push_back(i);
   }
   RequiredColumnsMap requiredColumns;
-  requiredColumns.emplace("INPUT", requiredColsList);
+  requiredColumns.push_back({"INPUT", requiredColsList});
 
   auto analysis = std::make_unique<IdentityFunctionAnalysis>();
   analysis->tableFunctionHandle_ = std::make_shared<IdentityFunctionHandle>();
@@ -89,9 +88,8 @@ std::unique_ptr<IdentityFunctionAnalysis> IdentityFunction::analyze(
 
 void registerIdentityFunction(const std::string& name) {
   TableArgumentSpecList argSpecs;
-  argSpecs.insert(
-      std::make_shared<TableArgumentSpecification>(
-          "INPUT", true, false, false));
+  argSpecs.push_back(std::make_shared<TableArgumentSpecification>(
+      "INPUT", false, false, true));
   registerTableFunction(
       name,
       argSpecs,
@@ -144,7 +142,7 @@ std::unique_ptr<RepeatFunctionAnalysis> RepeatFunction::analyze(
     requiredColsList.push_back(i);
   }
   RequiredColumnsMap requiredColumns;
-  requiredColumns.emplace("INPUT", requiredColsList);
+  requiredColumns.push_back({"INPUT", requiredColsList});
   auto analysis = std::make_unique<RepeatFunctionAnalysis>();
   analysis->tableFunctionHandle_ =
       std::make_shared<RepeatFunctionHandle>(count);
@@ -156,11 +154,10 @@ std::unique_ptr<RepeatFunctionAnalysis> RepeatFunction::analyze(
 
 void registerRepeatFunction(const std::string& name) {
   TableArgumentSpecList argSpecs;
-  argSpecs.insert(
-      std::make_shared<TableArgumentSpecification>(
-          "INPUT", true, false, false));
-  argSpecs.insert(
-      std::make_shared<ScalarArgumentSpecification>("COUNT", BIGINT(), true));
+  argSpecs.push_back(std::make_shared<TableArgumentSpecification>(
+      "INPUT", false, false, true));
+  argSpecs.push_back(std::make_shared<ScalarArgumentSpecification>(
+      "COUNT", BIGINT(), true));
   registerTableFunction(
       name,
       argSpecs,

@@ -119,7 +119,7 @@ public class PrestoNativeQueryRunnerUtils
         private NativeQueryRunnerParameters nativeQueryRunnerParameters = getNativeQueryRunnerParameters();
         private Path dataDirectory = nativeQueryRunnerParameters.dataDirectory;
         private String serverBinary = nativeQueryRunnerParameters.serverBinary.toString();
-        private Integer workerCount = nativeQueryRunnerParameters.workerCount.orElse(4);
+        private Integer workerCount = nativeQueryRunnerParameters.workerCount.orElse(1);
         private Integer cacheMaxSize = 0;
         private String storageFormat = DEFAULT_STORAGE_FORMAT;
         private Optional<String> remoteFunctionServerUds = Optional.empty();

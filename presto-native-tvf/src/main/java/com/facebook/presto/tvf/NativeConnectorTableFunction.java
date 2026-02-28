@@ -15,6 +15,8 @@ package com.facebook.presto.tvf;
 
 import com.facebook.airlift.http.client.HttpClient;
 import com.facebook.airlift.http.client.Request;
+import com.facebook.airlift.http.client.Response;
+import com.facebook.airlift.http.client.ResponseHandler;
 import com.facebook.airlift.json.JsonCodec;
 import com.facebook.airlift.json.JsonCodecFactory;
 import com.facebook.airlift.json.JsonObjectMapperProvider;
@@ -35,7 +37,10 @@ import com.facebook.presto.spi.function.table.TableFunctionAnalysis;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.io.CharStreams;
 
+import java.io.IOException;
+import java.io.InputStreamReader;
 import java.util.List;
 import java.util.Map;
 
@@ -47,6 +52,7 @@ import static com.facebook.presto.tvf.NativeTVFProvider.getWorkerLocation;
 import static com.google.common.net.HttpHeaders.ACCEPT;
 import static com.google.common.net.HttpHeaders.CONTENT_TYPE;
 import static com.google.common.net.MediaType.JSON_UTF_8;
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Objects.requireNonNull;
 
 public class NativeConnectorTableFunction
@@ -90,14 +96,9 @@ public class NativeConnectorTableFunction
     @Override
     public TableFunctionAnalysis analyze(ConnectorSession session, ConnectorTransactionHandle transaction, Map<String, Argument> arguments)
     {
-        try {
-            return httpClient.execute(
-                    getWorkerRequest(arguments),
-                    createJsonResponseHandler(tableFunctionAnalysisJsonCodec)).toTableFunctionAnalysis(typeManager);
-        }
-        catch (Exception e) {
-            throw new PrestoException(TABLE_FUNCTION_ANALYSIS_FAILED, "Failed to analyze function.", e);
-        }
+        return httpClient.execute(
+                getWorkerRequest(arguments),
+                new AnalyzeResponseHandler(tableFunctionAnalysisJsonCodec, typeManager));
     }
 
     private Request getWorkerRequest(Map<String, Argument> arguments)
@@ -109,5 +110,64 @@ public class NativeConnectorTableFunction
                 .setHeader(CONTENT_TYPE, JSON_UTF_8.toString())
                 .setHeader(ACCEPT, JSON_UTF_8.toString())
                 .build();
+    }
+
+    private static class AnalyzeResponseHandler
+            implements ResponseHandler<TableFunctionAnalysis, RuntimeException>
+    {
+        private final JsonCodec<NativeTableFunctionAnalysis> codec;
+        private final TypeManager typeManager;
+
+        public AnalyzeResponseHandler(JsonCodec<NativeTableFunctionAnalysis> codec, TypeManager typeManager)
+        {
+            this.codec = requireNonNull(codec, "codec is null");
+            this.typeManager = requireNonNull(typeManager, "typeManager is null");
+        }
+
+        @Override
+        public TableFunctionAnalysis handleException(Request request, Exception exception)
+        {
+            throw new PrestoException(TABLE_FUNCTION_ANALYSIS_FAILED, "Failed to analyze function: " + exception.getMessage(), exception);
+        }
+
+        @Override
+        public TableFunctionAnalysis handle(Request request, Response response)
+        {
+            try {
+                String body = CharStreams.toString(new InputStreamReader(response.getInputStream(), UTF_8));
+                
+                if (response.getStatusCode() != 200) {
+                    // Extract just the "Reason:" line from Velox exception message
+                    String errorMessage = extractReasonFromVeloxError(body);
+                    throw new PrestoException(TABLE_FUNCTION_ANALYSIS_FAILED, errorMessage);
+                }
+                
+                return codec.fromJson(body).toTableFunctionAnalysis(typeManager);
+            }
+            catch (PrestoException e) {
+                throw e;
+            }
+            catch (IOException e) {
+                throw new PrestoException(TABLE_FUNCTION_ANALYSIS_FAILED, "Failed to read response: " + e.getMessage(), e);
+            }
+            catch (Exception e) {
+                throw new PrestoException(TABLE_FUNCTION_ANALYSIS_FAILED, "Failed to parse response: " + e.getMessage(), e);
+            }
+        }
+
+        private String extractReasonFromVeloxError(String errorMessage)
+        {
+            // Look for "Reason: " line in the Velox error message
+            String[] lines = errorMessage.split("\n");
+            for (String line : lines) {
+                String trimmed = line.trim();
+                if (trimmed.startsWith("Reason:")) {
+                    // Extract everything after "Reason: "
+                    return trimmed.substring("Reason:".length()).trim();
+                }
+            }
+            // If no "Reason:" found, return the full message
+            return errorMessage;
+        }
     }
 }

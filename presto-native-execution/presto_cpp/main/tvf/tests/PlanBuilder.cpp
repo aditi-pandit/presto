@@ -13,6 +13,7 @@
  */
 
 #include "presto_cpp/main/tvf/tests/PlanBuilder.h"
+#include <map>
 
 using namespace facebook::velox;
 using namespace facebook::velox::core;
@@ -79,8 +80,7 @@ addTvfNode(
       requiredColumns.push_back(columnIndices);
     }
 
-    // Using an empty marker channels map for tests.
-    std::unordered_map<velox::column_index_t, velox::column_index_t>
+    std::vector<std::pair<velox::column_index_t, velox::column_index_t>>
         markerChannels;
 
     std::vector<TableFunctionProcessorNode::PassThroughColumnSpecification>

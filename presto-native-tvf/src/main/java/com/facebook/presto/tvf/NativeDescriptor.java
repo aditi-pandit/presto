@@ -72,8 +72,8 @@ public class NativeDescriptor
                 @JsonProperty("name") Optional<String> name,
                 @JsonProperty("typeSignature") Optional<TypeSignature> typeSignature)
         {
+            // Name can be "" if the field is anonymous.
             this.name = requireNonNull(name, "name is null");
-            name.ifPresent(nameValue -> checkArgument(!nameValue.isEmpty(), "name is empty"));
             this.typeSignature = requireNonNull(typeSignature, "typeSignature is null");
         }
 

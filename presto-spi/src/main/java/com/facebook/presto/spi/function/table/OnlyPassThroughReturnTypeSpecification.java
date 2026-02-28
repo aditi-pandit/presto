@@ -23,7 +23,7 @@ public class OnlyPassThroughReturnTypeSpecification
         extends ReturnTypeSpecification
 {
     public static final OnlyPassThroughReturnTypeSpecification ONLY_PASS_THROUGH = new OnlyPassThroughReturnTypeSpecification("");
-    private static final String returnType = "PASSTRHOUGH";
+    private static final String returnType = "PASSTHROUGH";
 
     @JsonCreator
     public OnlyPassThroughReturnTypeSpecification(@JsonProperty("returnType") String returnType)

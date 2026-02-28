@@ -1870,15 +1870,24 @@ VeloxQueryPlanConverterBase::toVeloxQueryPlan(
     const std::shared_ptr<const protocol::TableFunctionProcessorNode>& node,
     const std::shared_ptr<protocol::TableWriteInfo>& tableWriteInfo,
     const protocol::TaskId& taskId) {
-  const auto outputType = toRowType(node->properOutputs, typeParser_);
+  // Build complete output variable list including proper outputs and pass through columns.
+  std::vector<protocol::VariableReferenceExpression> allOutputs = node->properOutputs;
+  for (const auto& spec : node->passThroughSpecifications) {
+    for (const auto& col : spec.columns) {
+      allOutputs.push_back(col.outputVariables);
+    }
+  }
+
+  const auto outputType = toRowType(allOutputs, typeParser_);
 
   std::vector<std::vector<column_index_t>> requiredColumns;
   std::vector<core::PlanNodePtr> sources;
+  std::shared_ptr<const RowType> inputType;
   if (node->source) {
     const auto sourceNode =
         toVeloxQueryPlan(*node->source, tableWriteInfo, taskId);
     sources.push_back(sourceNode);
-    const auto inputType = sourceNode->outputType();
+    inputType = sourceNode->outputType();
     for (const auto& variables : node->requiredVariables) {
       std::vector<column_index_t> columnIndices;
       for (const auto& variable : variables) {
@@ -1906,7 +1915,7 @@ VeloxQueryPlanConverterBase::toVeloxQueryPlan(
     if (!node->specification->partitionBy.empty()) {
       partitionKeys = toVeloxExprs(node->specification->partitionBy);
     }
-    if (!node->specification->orderingScheme) {
+    if (node->specification->orderingScheme) {
       for (const auto& orderby : node->specification->orderingScheme->orderBy) {
         sortingKeys.emplace_back(exprConverter_.toVeloxExpr(orderby.variable));
         sortingOrders.push_back(toVeloxSortOrder(orderby.sortOrder));
@@ -1914,13 +1923,13 @@ VeloxQueryPlanConverterBase::toVeloxQueryPlan(
     }
   }
 
-  std::unordered_map<velox::column_index_t, velox::column_index_t>
+  std::vector<std::pair<velox::column_index_t, velox::column_index_t>>
       markerChannels;
-  if (node->markerVariables) {
+  if (node->markerVariables && inputType) {
     for (const auto& [markerVariable, channel] : *node->markerVariables) {
-      markerChannels.emplace(
-          outputType->getChildIdx(markerVariable.name),
-          outputType->getChildIdx(channel.name));
+      markerChannels.push_back({
+          inputType->getChildIdx(markerVariable.name),
+          inputType->getChildIdx(channel.name)});
     }
   }
 
@@ -1930,9 +1939,15 @@ VeloxQueryPlanConverterBase::toVeloxQueryPlan(
   for (const auto& specification : node->passThroughSpecifications) {
     auto indexChannel = specification.declaredAsPassThrough ? channel++ : -1;
     for (const auto& column : specification.columns) {
+      // For pass-through columns, the output variable name matches the input variable name
+      // So we can look up both in their respective types
+      auto outputColumnIndex = outputType->getChildIdx(column.outputVariables.name);
+      auto inputColumnIndex = inputType ? inputType->getChildIdx(column.outputVariables.name) : -1;
+      
       passThroughColumnSpecifications.emplace_back(
           column.partitioningColumn,
-          outputType->getChildIdx(column.outputVariables.name),
+          inputColumnIndex,  // Use INPUT column index, not output
+          outputColumnIndex, // Add output column index as new parameter
           indexChannel);
     }
   }

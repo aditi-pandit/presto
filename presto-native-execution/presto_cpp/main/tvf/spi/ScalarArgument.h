@@ -38,14 +38,15 @@ class ScalarArgument : public Argument {
   const velox::VectorPtr constantValue_;
 };
 
-// TODO: Add default value support.
 class ScalarArgumentSpecification : public ArgumentSpecification {
  public:
   ScalarArgumentSpecification(
       std::string name,
       velox::TypePtr type,
-      bool required)
-      : ArgumentSpecification(name, required), type_(std::move(type)) {};
+      bool required,
+      std::string defaultValue = "")
+      : ArgumentSpecification(name, required, std::move(defaultValue)),
+        type_(std::move(type)) {};
 
   const velox::TypePtr rowType() const {
     return type_;

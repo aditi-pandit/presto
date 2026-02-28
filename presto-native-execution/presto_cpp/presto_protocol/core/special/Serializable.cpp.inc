@@ -11,19 +11,19 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+namespace facebook::presto::protocol {
 
-#include "presto_cpp/main/tvf/functions/TableFunctionsRegistration.h"
-
-namespace facebook::presto::tvf {
-
-extern void registerExcludeColumns(const std::string& name);
-extern void registerSequence(const std::string& name);
-extern void registerRemoteAnn(const std::string& name);
-
-void registerAllTableFunctions(const std::string& prefix) {
-  registerExcludeColumns(prefix + "exclude_columns");
-  registerSequence(prefix + "sequence");
-  registerRemoteAnn(prefix + "remoteAnn");
+void to_json(json& j, const Serializable& p) {
+  j = json::object();
+  to_json_key(j, "type", p.type, "Serializable", "Type", "type");
+  to_json_key(j, "block", p.block, "Serializable", "Block", "block");
 }
 
-} // namespace facebook::presto::tvf
+void from_json(const json& j, Serializable& p) {
+  from_json_key(j, "type", p.type, "Serializable", "Type", "type");
+  if (j.contains("block") && !j["block"].is_null())
+  {
+    from_json_key(j, "block", p.block, "Serializable", "Block", "block");
+  }
+}
+} // namespace facebook::presto::protocol

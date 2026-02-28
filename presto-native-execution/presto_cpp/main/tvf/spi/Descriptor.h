@@ -29,7 +29,12 @@ class Descriptor : public Argument {
       : type_(DescriptorType::kNameType),
         names_(std::move(names)),
         types_(std::move(types)) {
-    VELOX_CHECK_EQ(names_.size(), types_.size());
+    VELOX_CHECK_EQ(
+      names_.size(),
+      types_.size(),
+      "Descriptor names and types must have the same size: {} names vs {} types",
+      names_.size(),
+      types_.size());
     fields_.reserve(names_.size());
     for (velox::column_index_t i = 0; i < names_.size(); i++) {
       fields_.push_back(

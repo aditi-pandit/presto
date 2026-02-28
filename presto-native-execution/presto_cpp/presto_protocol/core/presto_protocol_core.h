@@ -2055,6 +2055,7 @@ void to_json(json& j, const NodeStatus& p);
 void from_json(const json& j, NodeStatus& p);
 } // namespace facebook::presto::protocol
 namespace facebook::presto::protocol {
+
 struct Serializable {
   Type type = {};
   Block block = {};
@@ -2433,6 +2434,7 @@ struct ScalarArgumentSpecification : public ArgumentSpecification {
   String name = {};
   Type type = {};
   bool required = {};
+  String defaultValue = {};
 
   ScalarArgumentSpecification() noexcept;
 };

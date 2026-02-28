@@ -89,7 +89,9 @@ public class NativeTableFunctionAnalysis
     {
         return nativeFields.stream()
                 .map(field -> new Descriptor.Field(
-                        field.getName(),
+                        // Return fields can be anonymous which are "".
+                        // If so return Optional.empty().
+                        field.getName().filter(name -> !name.isEmpty()),
                         Optional.ofNullable(typeManager.getType(field.getTypeSignature().orElse(null)))))
                 .collect(toImmutableList());
     }

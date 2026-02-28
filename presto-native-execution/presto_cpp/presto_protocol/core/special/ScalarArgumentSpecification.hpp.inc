@@ -11,19 +11,15 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+namespace facebook::presto::protocol {
+struct ScalarArgumentSpecification : public ArgumentSpecification {
+  String name = {};
+  Type type = {};
+  bool required = {};
+  String defaultValue = {};
 
-#include "presto_cpp/main/tvf/functions/TableFunctionsRegistration.h"
-
-namespace facebook::presto::tvf {
-
-extern void registerExcludeColumns(const std::string& name);
-extern void registerSequence(const std::string& name);
-extern void registerRemoteAnn(const std::string& name);
-
-void registerAllTableFunctions(const std::string& prefix) {
-  registerExcludeColumns(prefix + "exclude_columns");
-  registerSequence(prefix + "sequence");
-  registerRemoteAnn(prefix + "remoteAnn");
-}
-
-} // namespace facebook::presto::tvf
+  ScalarArgumentSpecification() noexcept;
+};
+void to_json(json& j, const ScalarArgumentSpecification& p);
+void from_json(const json& j, ScalarArgumentSpecification& p);
+} // namespace facebook::presto::protocol

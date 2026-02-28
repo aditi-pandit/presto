@@ -20,17 +20,19 @@ namespace facebook::presto::tvf {
 
 class Argument {
  public:
-  Argument() {}
-
+  Argument() = default;
   virtual ~Argument() = default;
-
- protected:
 };
 
 class ArgumentSpecification {
  public:
-  ArgumentSpecification(std::string name, bool required)
-      : name_(std::move(name)), required_(required) {};
+  ArgumentSpecification(
+      std::string name,
+      bool required,
+      std::string defaultValue = "")
+      : name_(std::move(name)),
+        required_(required),
+        defaultValue_(std::move(defaultValue)) {};
 
   virtual ~ArgumentSpecification() = default;
 
@@ -38,14 +40,18 @@ class ArgumentSpecification {
     return name_;
   }
 
-  const bool required() const {
+  bool required() const {
     return required_;
+  }
+
+  const std::string& defaultValue() const {
+    return defaultValue_;
   }
 
  private:
   const std::string name_;
   const bool required_;
-  // TODO : Add default value.
+  const std::string defaultValue_;
 };
 
 } // namespace facebook::presto::tvf

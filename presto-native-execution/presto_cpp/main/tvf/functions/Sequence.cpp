@@ -129,7 +129,7 @@ class Sequence : public TableFunctionSplitProcessor {
       : TableFunctionSplitProcessor("sequence", pool, nullptr),
         step_(handle->step()) {}
 
-  static std::unique_ptr<TableFunctionAnalysis> analyze(
+static std::unique_ptr<TableFunctionAnalysis> analyze(
       const std::unordered_map<std::string, std::shared_ptr<Argument>>& args) {
     VELOX_CHECK_GT(args.count(START_ARGUMENT_NAME), 0, "START arg not found");
     VELOX_CHECK_GT(args.count(STOP_ARGUMENT_NAME), 0, "STOP arg not found");
@@ -138,28 +138,48 @@ class Sequence : public TableFunctionSplitProcessor {
     VELOX_CHECK(startArg, "START arg is NULL");
     auto startPtr = std::dynamic_pointer_cast<ScalarArgument>(startArg);
     VELOX_CHECK(startPtr, "START arg is not a scalar");
-    auto startVal =
-        startPtr->value()->template as<ConstantVector<int64_t>>()->valueAt(0);
+    auto startVector = startPtr->value()->template as<ConstantVector<int64_t>>();
+    VELOX_USER_CHECK(!startVector->isNullAt(0), "Start is null");
+    auto startVal = startVector->valueAt(0);
 
     auto stopArg = args.at(STOP_ARGUMENT_NAME);
     VELOX_CHECK(stopArg, "STOP arg is NULL");
     auto stopPtr = std::dynamic_pointer_cast<ScalarArgument>(stopArg);
     VELOX_CHECK(stopPtr, "STOP arg is not a scalar");
-    auto stopVal =
-        stopPtr->value()->template as<ConstantVector<int64_t>>()->valueAt(0);
+    auto stopVector = stopPtr->value()->template as<ConstantVector<int64_t>>();
+    VELOX_USER_CHECK(!stopVector->isNullAt(0), "Stop is null");
+    auto stopVal = stopVector->valueAt(0);
 
     auto stepArg = args.at(STEP_ARGUMENT_NAME);
     VELOX_CHECK(stepArg, "STEP arg is NULL");
     auto stepPtr = std::dynamic_pointer_cast<ScalarArgument>(stepArg);
     VELOX_CHECK(stepPtr, "STEP arg is not a scalar");
-    auto stepVal =
-        stepPtr->value()->template as<ConstantVector<int64_t>>()->valueAt(0);
+    auto stepVector = stepPtr->value()->template as<ConstantVector<int64_t>>();
+    VELOX_USER_CHECK(!stepVector->isNullAt(0), "Step is null");
+    auto stepVal = stepVector->valueAt(0);
+
+    if (stopVal > startVal) {
+      VELOX_USER_CHECK_GT(
+          stepVal,
+          0,
+          "Step must be positive for sequence [{}, {}]",
+          startVal,
+          stopVal);
+    } else if (stopVal < startVal) {
+      VELOX_USER_CHECK_LT(
+          stepVal,
+          0,
+          "Step must be negative for sequence [{}, {}]",
+          startVal,
+          stopVal);
+    }
 
     auto handle = std::make_shared<SequenceHandle>(startVal, stopVal, stepVal);
     auto analysis = std::make_unique<SequenceAnalysis>();
     analysis->tableFunctionHandle_ = handle;
     return analysis;
   }
+
 
   std::shared_ptr<TableFunctionResult> apply(
       const std::shared_ptr<const TableSplitHandle>& split) override {
@@ -201,7 +221,8 @@ class Sequence : public TableFunctionSplitProcessor {
     auto stop = sequenceHandle->stop();
     auto step = sequenceHandle->step();
 
-    auto numSteps = (stop - start) / step + 1;
+    int128_t numSteps =
+        (static_cast<int128_t>(stop) - static_cast<int128_t>(start)) / step + 1;
 
     std::vector<TableSplitHandlePtr> splits = {};
     splits.reserve((numSteps / kMaxSteps) + 1);
@@ -212,7 +233,7 @@ class Sequence : public TableFunctionSplitProcessor {
           std::make_shared<SequenceSplitHandle>(splitStart, splitSteps);
       splits.push_back(sequenceSplit);
       numSteps -= kMaxSteps;
-      splitStart = start + (kMaxSteps * step);
+      splitStart += (splitSteps * step);
     }
     return splits;
   }
@@ -225,16 +246,12 @@ class Sequence : public TableFunctionSplitProcessor {
 
 void registerSequence(const std::string& name) {
   TableArgumentSpecList argSpecs;
-  argSpecs.insert(
-      std::make_shared<ScalarArgumentSpecification>(
-          START_ARGUMENT_NAME, BIGINT(), true));
-  argSpecs.insert(
-      std::make_shared<ScalarArgumentSpecification>(
-          STOP_ARGUMENT_NAME, BIGINT(), true));
-  // TODO : Figure how to make this an optional argument.
-  argSpecs.insert(
-      std::make_shared<ScalarArgumentSpecification>(
-          STEP_ARGUMENT_NAME, BIGINT(), true));
+  argSpecs.push_back(std::make_shared<ScalarArgumentSpecification>(
+      START_ARGUMENT_NAME, BIGINT(), false, "0"));
+  argSpecs.push_back(std::make_shared<ScalarArgumentSpecification>(
+      STOP_ARGUMENT_NAME, BIGINT(), true));
+  argSpecs.push_back(std::make_shared<ScalarArgumentSpecification>(
+      STEP_ARGUMENT_NAME, BIGINT(), false, "1"));
 
   std::vector<std::string> names = {"sequential_number"};
   std::vector<TypePtr> types = {BIGINT()};

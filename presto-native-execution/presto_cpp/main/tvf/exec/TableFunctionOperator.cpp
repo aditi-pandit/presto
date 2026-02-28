@@ -112,21 +112,36 @@ RowVectorPtr TableFunctionOperator::getOutputFromFunction() {
   VELOX_CHECK(tableFunctionPartition_);
   VELOX_CHECK(dataProcessor_);
 
-  // This is the first call to TableFunction::apply for this partition
-  // or a previous apply for this input has completed.
   if (!validFunctionInput_) {
-    functionInput_ = tableFunctionPartition_->assembleInput(
-        numRowsPerOutput_, numPartitionProcessedRows_);
+    bool allRowsProcessed = (tableFunctionPartition_->numRows() - numPartitionProcessedRows_) == 0;
+    bool hasMultipleInputs = requiredColumnTypes_.size() > 1;
+    bool shouldTryAssemble = !allRowsProcessed || (allRowsProcessed && numPartitionProcessedRows_ == 0 && hasMultipleInputs);
+    
+    if (allRowsProcessed && numPartitionProcessedRows_ > 0 && !calledWithNullptr_ && hasMultipleInputs) {
+      functionInput_.clear();
+      for (size_t i = 0; i < requiredColumnTypes_.size(); i++) {
+        functionInput_.push_back(nullptr);
+      }
+      calledWithNullptr_ = true;
+    } else if (shouldTryAssemble) {
+      functionInput_ = tableFunctionPartition_->assembleInput(
+          numRowsPerOutput_, numPartitionProcessedRows_);
+    } else {
+      return nullptr;
+    }
     validFunctionInput_ = true;
   }
 
   auto result = dataProcessor_->apply(functionInput_);
+  
   if (result->state() == TableFunctionResult::TableFunctionState::kFinished) {
-    // Skip the rest of this partition processing.
-    numProcessedRows_ +=
-        (tableFunctionPartition_->numRows() - numPartitionProcessedRows_);
+    numProcessedRows_ += (tableFunctionPartition_->numRows() - numPartitionProcessedRows_);
     tableFunctionPartition_ = nullptr;
     numPartitionProcessedRows_ = 0;
+    validFunctionInput_ = false;
+    if (numRows_ == 0) {
+      finishedEmptyPartition_ = true;
+    }
     return nullptr;
   }
 
@@ -138,18 +153,25 @@ RowVectorPtr TableFunctionOperator::getOutputFromFunction() {
   VELOX_CHECK(
       result->state() == TableFunctionResult::TableFunctionState::kProcessed);
   auto resultRows = result->result();
-  VELOX_CHECK(resultRows);
+  
   if (result->usedInput()) {
-    // The input rows were consumed, so we need to re-assemble input at the
-    // next call.
-    numPartitionProcessedRows_ += functionInput_[0]->size();
-    numProcessedRows_ += functionInput_[0]->size();
+    velox::vector_size_t totalInputRows = 0;
+    for (const auto& input : functionInput_) {
+      if (input) {
+        totalInputRows = std::max(totalInputRows, input->size());
+      }
+    }
+    numPartitionProcessedRows_ += totalInputRows;
+    numProcessedRows_ += totalInputRows;
     validFunctionInput_ = false;
   }
 
-  // Append passthrough columns if any.
-  return std::move(
-      tableFunctionPartition_->appendPassThroughColumns(resultRows));
+  if (!resultRows || resultRows->size() == 0) {
+    return nullptr;
+  }
+
+  auto finalResult = tableFunctionPartition_->appendPassThroughColumns(resultRows);
+  return (finalResult && finalResult->size() > 0) ? std::move(finalResult) : nullptr;
 }
 
 RowVectorPtr TableFunctionOperator::getOutput() {
@@ -161,41 +183,47 @@ RowVectorPtr TableFunctionOperator::getOutput() {
     createTableFunctionDataProcessor(tableFunctionProcessorNode_);
     numPartitionProcessedRows_ = 0;
     validFunctionInput_ = false;
+    calledWithNullptr_ = false;
+    finishedEmptyPartition_ = false;
   };
 
   auto noRemainingInputForPartition = [&]() -> bool {
-    return tableFunctionPartition_ &&
+    bool hasPartition = tableFunctionPartition_ != nullptr;
+    bool allRowsProcessed = hasPartition &&
         (tableFunctionPartition_->numRows() - numPartitionProcessedRows_ == 0);
+    // Only multiple inputs need the nullptr call
+    bool hasMultipleInputs = requiredColumnTypes_.size() > 1;
+    // IMPORTANT: Don't consider partition done if validFunctionInput_ is true
+    // This means the function has output to produce but hasn't consumed the input yet
+    return hasPartition && allRowsProcessed && (!hasMultipleInputs || calledWithNullptr_) && !validFunctionInput_;
   };
 
-  // Setup partition if needed.
   if (numRows_ == 0) {
-    if (tableFunctionProcessorNode_->pruneWhenEmpty()) {
+    bool hasMultipleInputs = requiredColumnTypes_.size() > 1;
+    
+    if (!hasMultipleInputs && tableFunctionProcessorNode_->pruneWhenEmpty()) {
       return nullptr;
-    } else {
-      // This function has not received any input rows but processes empty
-      // input.
+    }
+    if (finishedEmptyPartition_) {
+      return nullptr;
+    }
+    if (tableFunctionPartition_ == nullptr) {
       tableFunctionPartition_ = tablePartitionBuild_->emptyPartition();
       initNewPartition();
     }
-
   } else {
-    // Its enough to check only numProcessedRows_ as this is incremented only
-    // after the function has signalled it processed the input rows.
-    const auto numRowsLeft = numRows_ - numProcessedRows_;
-    if (numRowsLeft == 0) {
+    if (numRows_ - numProcessedRows_ == 0 && noRemainingInputForPartition()) {
       return nullptr;
     }
 
-    // There is no partition being processed or the previous partition has been
-    // fully processed (there is no unprocessed input and nothing left in the
-    // partition either).
     if (tableFunctionPartition_ == nullptr || noRemainingInputForPartition()) {
       if (tablePartitionBuild_->hasNextPartition()) {
         tableFunctionPartition_ = tablePartitionBuild_->nextPartition();
         initNewPartition();
       } else {
-        // There is no partition to output.
+        if (requiredColumnTypes_.size() > 1 && !calledWithNullptr_) {
+          calledWithNullptr_ = true;
+        }
         return nullptr;
       }
     }

@@ -39,7 +39,7 @@ class TableFunctionPartition {
       const std::vector<velox::column_index_t>& inputMapping,
       const std::vector<velox::RowTypePtr>& requiredColumnTypes,
       const std::vector<std::vector<velox::column_index_t>>& requiredColumns,
-      const std::unordered_map<velox::column_index_t, velox::column_index_t>&
+      const std::vector<std::pair<velox::column_index_t, velox::column_index_t>>&
           markerChannels,
       const std::vector<
           TableFunctionProcessorNode::PassThroughColumnSpecification>&
@@ -134,7 +134,7 @@ class TableFunctionPartition {
   // different table arguments have different number of rows for the partition.
   // The marker columns are used to find the end of partition position for table
   // argument.
-  const std::unordered_map<velox::column_index_t, velox::column_index_t>&
+  const std::vector<std::pair<velox::column_index_t, velox::column_index_t>>
       markerChannels_;
 
   // Cache of first null positions for each column index.

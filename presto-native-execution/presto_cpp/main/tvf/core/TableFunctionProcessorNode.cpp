@@ -29,7 +29,7 @@ TableFunctionProcessorNode::TableFunctionProcessorNode(
     bool pruneWhenEmpty,
     velox::RowTypePtr outputType,
     std::vector<std::vector<column_index_t>> requiredColumns,
-    std::unordered_map<velox::column_index_t, velox::column_index_t>
+    std::vector<std::pair<velox::column_index_t, velox::column_index_t>>
         markerChannels,
     std::vector<PassThroughColumnSpecification> passThroughColumns,
     std::vector<PlanNodePtr> sources)
@@ -174,7 +174,13 @@ folly::dynamic TableFunctionProcessorNode::serialize() const {
   obj["outputType"] = outputType_->serialize();
 
   obj["requiredColumns"] = ISerializable::serialize(requiredColumns_);
-  obj["markerChannels"] = ISerializable::serialize(markerChannels_);
+  
+  folly::dynamic markerChannelsArray = folly::dynamic::array;
+  for (const auto& [key, value] : markerChannels_) {
+    markerChannelsArray.push_back(folly::dynamic::array(key, value));
+  }
+  obj["markerChannels"] = markerChannelsArray;
+  
   obj["passThroughColumns"] = serializePassThroughColumns(passThroughColumns_);
 
   return obj;
@@ -257,12 +263,12 @@ PlanNodePtr TableFunctionProcessorNode::create(
   auto requiredColumns = deserialize<std::vector<std::vector<column_index_t>>>(
       obj["requiredColumns"]);
 
-  // There isn't an option for std::unordered_map in the deserialization so
-  // transforming from an std::map to std::unordered_map.
-  auto markerChannels = deserialize<std::map<column_index_t, column_index_t>>(
-      obj["markerChannels"]);
-  std::unordered_map<column_index_t, column_index_t> markerChannelsMap(
-      markerChannels.begin(), markerChannels.end());
+  std::vector<std::pair<column_index_t, column_index_t>> markerChannels;
+  if (obj.count("markerChannels")) {
+    for (const auto& pairArray : obj["markerChannels"]) {
+      markerChannels.push_back({pairArray[0].asInt(), pairArray[1].asInt()});
+    }
+  }
 
   return std::make_shared<TableFunctionProcessorNode>(
       deserializePlanNodeId(obj),
@@ -274,7 +280,7 @@ PlanNodePtr TableFunctionProcessorNode::create(
       obj["pruneWhenEmpty"].asBool(),
       outputType,
       requiredColumns,
-      markerChannelsMap,
+      markerChannels,
       deserializePassthroughColumnSpecification(obj, context),
       sources);
 }

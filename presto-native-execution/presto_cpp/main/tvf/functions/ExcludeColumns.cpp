@@ -91,27 +91,45 @@ class ExcludeColumns : public TableFunction {
     VELOX_CHECK_GT(args.count(TABLE_ARGUMENT_NAME), 0, "INPUT arg not found");
 
     auto excludedColumnsArg = args.at(DESCRIPTOR_ARGUMENT_NAME);
-    VELOX_CHECK(excludedColumnsArg, "COLUMNS arg is NULL");
+    if (!excludedColumnsArg) {
+      VELOX_USER_FAIL("COLUMNS descriptor is null");
+    }
     auto excludedColumnsDesc =
         std::dynamic_pointer_cast<Descriptor>(excludedColumnsArg);
-    VELOX_CHECK(excludedColumnsDesc, "COLUMNS arg not a descriptor");
+    if (!excludedColumnsDesc) {
+      VELOX_USER_FAIL("COLUMNS descriptor is null");
+    }
 
     auto inputArg = args.at(TABLE_ARGUMENT_NAME);
     VELOX_CHECK(inputArg, "INPUT arg is NULL");
     auto inputTableArg = std::dynamic_pointer_cast<TableArgument>(inputArg);
     VELOX_CHECK(inputTableArg, "INPUT arg not a table");
 
+    // Check if descriptor has types (not allowed)
+    if (!excludedColumnsDesc->types().empty()) {
+      VELOX_USER_FAIL("COLUMNS descriptor contains types");
+    }
+
     // Validate that each excluded column is found in the input table
-    // and remove it.
+    // and collect non-existent columns for error reporting
     auto inputColumns = inputTableArg->rowType()->names();
     std::unordered_set<std::string> inputColumnsSet;
     for (const auto& col : inputColumns) {
       inputColumnsSet.insert(col);
     }
+    
+    std::vector<std::string> nonExistentColumns;
     for (const auto& col : excludedColumnsDesc->names()) {
-      VELOX_CHECK_GT(
-          inputColumnsSet.count(col), 0, "COLUMN {} not found in INPUT", col);
+      if (inputColumnsSet.count(col) == 0) {
+        nonExistentColumns.push_back(col);
+      }
     }
+    
+    VELOX_USER_CHECK(
+        nonExistentColumns.empty(),
+        "Excluded columns: [{}] not present in the table",
+        folly::join(", ", nonExistentColumns));
+
     std::unordered_set<std::string> excludeColumnsSet;
     for (const auto& col : excludedColumnsDesc->names()) {
       excludeColumnsSet.insert(col);
@@ -119,9 +137,7 @@ class ExcludeColumns : public TableFunction {
 
     std::vector<std::string> returnNames;
     std::vector<TypePtr> returnTypes;
-    std::unordered_map<std::string, std::vector<column_index_t>>
-        requiredColumns;
-    requiredColumns.reserve(1);
+    RequiredColumnsMap requiredColumns;
     std::vector<column_index_t> requiredColsList;
     for (column_index_t i = 0; i < inputColumns.size(); i++) {
       if (excludeColumnsSet.count(inputColumns.at(i)) == 0) {
@@ -132,7 +148,13 @@ class ExcludeColumns : public TableFunction {
         requiredColsList.push_back(i);
       }
     }
-    requiredColumns.insert({TABLE_ARGUMENT_NAME, requiredColsList});
+    
+    // Check if all columns are excluded
+    VELOX_USER_CHECK(
+        !returnNames.empty(),
+        "All columns are excluded");
+    
+    requiredColumns.push_back({TABLE_ARGUMENT_NAME, requiredColsList});
     auto analysis = std::make_unique<ExcludeColumnsAnalysis>();
     analysis->tableFunctionHandle_ = std::make_shared<ExcludeColumnsHandle>();
     analysis->returnType_ =
@@ -148,12 +170,10 @@ class ExcludeColumns : public TableFunction {
 
 void registerExcludeColumns(const std::string& name) {
   TableArgumentSpecList argSpecs;
-  argSpecs.insert(
-      std::make_shared<TableArgumentSpecification>(
-          TABLE_ARGUMENT_NAME, true, true, false));
-  argSpecs.insert(
-      std::make_shared<DescriptorArgumentSpecification>(
-          DESCRIPTOR_ARGUMENT_NAME, Descriptor({"columns"}), true));
+  argSpecs.push_back(std::make_shared<TableArgumentSpecification>(
+      TABLE_ARGUMENT_NAME, true, true, false));
+  argSpecs.push_back(std::make_shared<DescriptorArgumentSpecification>(
+      DESCRIPTOR_ARGUMENT_NAME, Descriptor({"columns"}), true));
   registerTableFunction(
       name,
       argSpecs,

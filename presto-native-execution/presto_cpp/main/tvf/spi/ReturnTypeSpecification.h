@@ -20,7 +20,7 @@ namespace facebook::presto::tvf {
 
 class ReturnTypeSpecification {
  public:
-  enum class ReturnType { kGenericTable, kDescribedTable };
+  enum class ReturnType { kGenericTable, kDescribedTable, kOnlyPassThrough };
 
   ReturnTypeSpecification(ReturnType returnType) : returnType_(returnType) {};
 
@@ -55,6 +55,13 @@ class DescribedTableReturnTypeSpecification : public ReturnTypeSpecification {
 
  private:
   DescriptorPtr descriptor_;
+};
+
+class OnlyPassThroughReturnTypeSpecification : public ReturnTypeSpecification {
+ public:
+  OnlyPassThroughReturnTypeSpecification()
+      : ReturnTypeSpecification(
+            ReturnTypeSpecification::ReturnType::kOnlyPassThrough) {};
 };
 
 } // namespace facebook::presto::tvf

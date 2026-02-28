@@ -44,7 +44,7 @@ class TableSplitHandle : public velox::ISerializable {
 using TableSplitHandlePtr = std::shared_ptr<const TableSplitHandle>;
 
 using RequiredColumnsMap =
-    std::unordered_map<std::string, std::vector<velox::column_index_t>>;
+    std::vector<std::pair<std::string, std::vector<velox::column_index_t>>>;
 
 // TODO : Make this implement ISerializable as well ?
 class TableFunctionAnalysis {

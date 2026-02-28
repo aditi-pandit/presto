@@ -484,11 +484,19 @@ void PrestoServer::run() {
           proxygen::HTTPMessage* message,
           const std::vector<std::unique_ptr<folly::IOBuf>>& body,
           proxygen::ResponseHandler* downstream) {
-        http::sendOkResponse(
-            downstream,
-            getAnalyzedTableValueFunction(
-                util::extractMessageBody(body),
-                server->nativeWorkerPool_.get()));
+        try {
+          http::sendOkResponse(
+              downstream,
+              getAnalyzedTableValueFunction(
+                  util::extractMessageBody(body),
+                  server->nativeWorkerPool_.get()));
+        } catch (const velox::VeloxUserError& ex) {
+          http::sendErrorResponse(downstream, ex.what());
+        } catch (const velox::VeloxException& ex) {
+          http::sendErrorResponse(downstream, ex.what());
+        } catch (const std::exception& ex) {
+          http::sendErrorResponse(downstream, ex.what());
+        }
       });
   httpServer_->registerPost(
       "/v1/tvf/splits",
@@ -496,11 +504,19 @@ void PrestoServer::run() {
           proxygen::HTTPMessage* message,
           const std::vector<std::unique_ptr<folly::IOBuf>>& body,
           proxygen::ResponseHandler* downstream) {
-        http::sendOkResponse(
-            downstream,
-            getSplits(
-                util::extractMessageBody(body),
-                server->nativeWorkerPool_.get()));
+        try {
+          http::sendOkResponse(
+              downstream,
+              getSplits(
+                  util::extractMessageBody(body),
+                  server->nativeWorkerPool_.get()));
+        } catch (const velox::VeloxUserError& ex) {
+          http::sendErrorResponse(downstream, ex.what());
+        } catch (const velox::VeloxException& ex) {
+          http::sendErrorResponse(downstream, ex.what());
+        } catch (const std::exception& ex) {
+          http::sendErrorResponse(downstream, ex.what());
+        }
       });
 
   if (systemConfig->enableRuntimeMetricsCollection()) {
