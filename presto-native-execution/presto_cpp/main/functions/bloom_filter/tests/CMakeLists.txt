@@ -10,22 +10,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-add_library(presto_function_metadata OBJECT FunctionMetadata.cpp)
-target_link_libraries(
-  presto_function_metadata
-  presto_common
-  velox_function_registry
-  velox_async_rpc_function_registry
+add_executable(
+  presto_bloom_filter_functions_test
+  BloomFilterAggregateFunctionTest.cpp
+  BloomFilterFunctionsTest.cpp
 )
 
-add_subdirectory(dynamic_registry)
-add_subdirectory(theta_sketch)
-add_subdirectory(bloom_filter)
+add_test(
+  NAME presto_bloom_filter_functions_test
+  COMMAND presto_bloom_filter_functions_test
+  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
 
-if(PRESTO_ENABLE_REMOTE_FUNCTIONS)
-  add_subdirectory(remote)
-endif()
-
-if(PRESTO_ENABLE_TESTING)
-  add_subdirectory(tests)
-endif()
+target_link_libraries(
+  presto_bloom_filter_functions_test
+  presto_bloom_filter_functions
+  velox_exec
+  velox_exec_test_lib
+  velox_functions_aggregates_test_lib
+  velox_functions_test_lib
+  GTest::gtest
+  GTest::gtest_main
+  GTest::gmock
+  GTest::gmock_main
+)
