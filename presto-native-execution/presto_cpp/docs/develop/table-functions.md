@@ -52,12 +52,130 @@ Unlike scalar and aggregate functions whose types can be resolved at registratio
 TVFs require a dynamic analysis phase during query planning to determine the output schema and runtime context.
 This design enables maximum flexibility while keeping the C++ SPI clean and intuitive.
 
+## Query Processing Flow for a SQL with a Table Function
 
-## Part I — C++ SPI
+### Parsing
+The SQL parser recognises the TABLE(…) wrapper in the FROM clause and builds an 
+AstNode for the table function invocation. Each argument is categorised by its 
+syntactic form — TABLE(subquery) becomes a table argument, DESCRIPTOR(…) becomes a 
+descriptor argument, and typed constants become scalar arguments. PARTITION BY, 
+ORDER BY, and COPARTITION clauses attached to table arguments are also captured at 
+this stage.
 
-### 1. Argument Classes
+### Statement Analysis
+During statement analysis, the coordinator looks up the table function in the AstNode
+with its (catalog.schema.function_name) in the TableFunctionRegistry. It then calls the 
+function's registered analyze() method passing the resolved argument values:
 
-#### 1a. ArgumentSpecification (base)
+ScalarArgument — Comprises the constant value and its Velox type.
+TableArgument — Consists of the row type of the input relation, plus any partition/sort keys
+the caller specified.
+DescriptorArgument — has the field names (and optional types) from the DESCRIPTOR(…) in the
+table function invocation.
+
+The TableFunction::analyze() method is responsible for:
+
+- Validating the argument values (types, constraints, cardinality). 
+- Computing the dynamic output schema if required. The returned schema can be a Descriptor or type. 
+- Declaring requiredColumns. requiredColumns are the minimal set of input column indexes the function actually needs from its input table. This helps the optimizer to prune all other columns. 
+- Producing a TableFunctionHandle (serializable) that carries all runtime context gathered during analysis to the workers.
+
+The result is a TableFunctionAnalysis struct containing these three pieces.
+
+### Logical Planning
+The planner materialises a TableFunctionNode in the logical plan tree. This node
+records the function name, the resolved arguments, the output variables, the list of
+source PlanNodes (one per table argument), per-argument properties (passThroughColumns,
+pruneWhenEmpty, rowSemantics, partition/sort keys), any COPARTITION lists, and the
+TableFunctionHandle from analysis.
+
+The planner then rewrites TableFunctionNode into a PlanNode subtree based on the input shape:
+
+| Input shape | Physical plan                                                                                                                                                                                         |
+|------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| No table inputs (leaf) | Planned like a TableScan driven by splits produced by the function getSplits() method                                                                                                                 |
+| Single table, row semantics | Inlined as a Project/Filter node                                                                                                                                                                      |
+| Single table, set semantics + PARTITION BY | Planned like a window function — data is repartitioned and sorted by the partition/order keys before reaching the operator                                                                            |
+|Multiple table inputs| A full-outer-join tree with row-number window functions per input; join conditions align partition boundaries and handle PRUNE/KEEP WHEN EMPTY semantics. This is the input to the TableFunction node |
+
+At this point the TableFunctionNode is materialized as a TableFunctionProcessorNode. This node is the Velox PlanNode
+responsible for Table function execution. More in the design section.
+
+### Split Generation (leaf functions only)
+Like TableScans, Leaf TableFunctions require splits to process. This is done using the TableFunctionSplitGenerator.
+This produces a list of TableSplitHandle objects — each representing an independent unit of
+work (e.g., a sub-range for sequence). These splits are scheduled across workers
+exactly like ordinary connector splits.
+
+### Serialization and dispatch
+The TableFunctionHandle and each TableSplitHandle are serialized (via
+velox::ISerializable / Jackson on the Java side) and included in the task descriptors
+sent to worker nodes. The workers deserialize them using a name-to-factory
+mapping registered by the function.
+
+### Execution on Workers
+TableFunctionProcessorNode could execute as :
+- LeafTableFunctionOperator: if the function has no input tables
+- TableFunctionOperator: if the function has input tables
+
+#### LeafTableFunctionOperator 
+This operator is used when the function has  no input tables, so it operates as a
+TableScan by getting splits from the TableFunctionSplitGenerator.
+
+For each assigned split, the worker:
+- Deserializes the TableSplitHandle. 
+- Instantiates a fresh TableFunctionSplitProcessor via the registered factory. 
+- Calls processor.apply(splitHandle) in a loop until kFinished is returned, 
+- Returns the output RowVectors from apply output.
+
+#### TableFunctionOperator
+For functions with table inputs, the operator:
+- Receives input RowVectors from upstream operators.
+- The TableFunctionOperator partitions and sorts the input RowVectors to identify the table function partitions. 
+- For each table function partition, the operator creates a TableFunctionDataProcessor from the factory and calls its 
+  TableFunctionDataProcessor::apply(input) in a loop for all the input RowVectors. 
+- The TableFunctionDataProcessor returns kProcessed with output vectors, kBlocked to pause (async dependency), or kFinished when the partition is complete. 
+- Result Assembly : The output vectors from TableFunctionDataProcessor::apply are returned to the downstream operators.
+
+## C++ SPI
+
+### Defining and registering a Table Function
+To define and register a Table Function, the user can perform the following steps
+- Identify the Table function arguments. 
+  These are represented with ArgumentSpecification classes when registering the function, 
+  but are resolved to Argument classes when instantiated in a SQL query.
+- Identify the Table function return type.
+  The Table function returns a table though its columns could be generic (decided at analysis time), described (known
+  at specification time) or PassThrough (no new columns, the input table is passthrough)
+- Decide the TableFunctionAnalyzer logic.
+  The TableFunctionAnalyzer is invoked by the Presto planner during StatementAnalysis of the received query. The
+  analysis validates input arguments to their specs, determines the required input columns, determines the ReteurnType
+  and also builds a TableFunctionHandle which could contain any metadata that the function would want to pass to the 
+  TableFunctionOperator instances during execution.
+- Decide if the processing will be done by a TableFunctionDataProcessor or a TableFunctionSplitProccessor (if there are
+  no input table arguments).
+- If using a TableFunctionSplitProcessor, then also write a TableFunctionSplitGenerator function which will be invoked
+  by the co=ordinator for scheduling splits.
+
+```cpp
+// presto_cpp/main/tvf/spi/TableFunction.h
+
+struct TableFunctionEntry {
+  TableArgumentSpecList                argumentSpecs;
+  ReturnSpecPtr                        returnTypeSpec;
+  TableFunctionAnalyzer                analyzer;
+  TableFunctionSplitGenerator          splitGenerator;      // null for data processors
+  TableFunctionDataProcessorFactory    dataProcessorFactory;  // null for split processors
+  TableFunctionSplitProcessorFactory   splitProcessorFactory; // null for data processors
+};
+```
+Each section below goes over the SPI for each of these parts
+
+### Argument and ArgumentSpecification Classes
+
+#### 1a. ArgumentSpecification
+Base class for each ArgumentSpecification. It specifies the name, if the argument is required or optional and its default value.
+Arguments can be Scalar, Table or Descriptor arguments each of which is described subsequently.
 
 ```cpp
 // presto_cpp/main/tvf/spi/Argument.h
@@ -111,10 +229,6 @@ class TableArgumentSpecification : public ArgumentSpecification {
   bool passThroughColumns; // forward all input columns to the output
 };
 
-// Type alias used when registering functions.
-using TableArgumentSpecList =
-    std::vector<std::shared_ptr<ArgumentSpecification>>;
-
 // Received at analysis time — carries the input relation's schema.
 class TableArgument : public Argument {
  public:
@@ -163,7 +277,10 @@ using DescriptorPtr = std::shared_ptr<const Descriptor>;
 
 ---
 
-### 2. Return Type Specifications
+### Return Type Specification
+Specifies the Table Function Return type. This could be GENERIC (so determined at Analysis time), DESCRIBED (so fixed
+and known at Table function specification time) and PASSTHROUGH (no new columns added, and outputs are passthrough 
+from input tables)
 
 ```cpp
 // presto_cpp/main/tvf/spi/ReturnTypeSpecification.h
@@ -192,10 +309,10 @@ class OnlyPassThroughReturnTypeSpecification : public ReturnTypeSpecification {}
 
 ---
 
-### 3. Analysis — TableFunctionHandle and TableFunctionAnalysis
+### Table Function Analysis
 
 `analyze()` runs on the **coordinator** at planning time. It validates arguments,
-determines the output schema, and packages runtime context into a
+determines the output schema, the required input columns, and packages runtime context into a
 `TableFunctionHandle` that is serialized and shipped to workers.
 
 ```cpp
@@ -210,15 +327,6 @@ class TableFunctionHandle : public velox::ISerializable {
 };
 
 using TableFunctionHandlePtr = std::shared_ptr<TableFunctionHandle>;
-
-// Opaque split context. Returned by getSplits(); passed to the split processor.
-class TableSplitHandle : public velox::ISerializable {
- public:
-  virtual folly::dynamic serialize() const = 0;
-  virtual std::string name() const = 0;
-};
-
-using TableSplitHandlePtr = std::shared_ptr<TableSplitHandle>;
 
 // Result returned by analyze().
 struct TableFunctionAnalysis {
@@ -237,7 +345,61 @@ struct TableFunctionAnalysis {
 
 ---
 
-### 4. TableFunctionResult
+
+---
+
+### Execution Processors
+Table Functions are processed as TableFunctionDataProcessor(s) or TableFunctionSplitProcessor(s)
+
+#### TableFunctionDataProcessor
+
+Used when the function consumes one or more table arguments (set semantics).
+One processor instance is created per partition.
+
+```cpp
+
+class TableFunctionDataProcessor {
+ public:
+  virtual ~TableFunctionDataProcessor() = default;
+
+  // Called repeatedly until kFinished is returned.
+  //
+  // input  — one RowVectorPtr per table argument, in declaration order.
+  //          Each vector contains only the columns listed in requiredColumns_.
+  //          An empty vector (zero rows) means the source is not yet ready.
+  //          A null pointer means all sources are exhausted.
+  virtual TableFunctionResult apply(
+      const std::vector<velox::RowVectorPtr>& input) = 0;
+
+ protected:
+  velox::memory::MemoryPool* pool_;
+  velox::HashStringAllocator* allocator_;
+};
+```
+
+#### TableFunctionSplitProcessor
+
+Used for leaf functions that generate data from scratch (no table inputs).
+One processor instance is created per split.
+
+```cpp
+class TableFunctionSplitProcessor {
+ public:
+  virtual ~TableFunctionSplitProcessor() = default;
+
+  // Called repeatedly until kFinished is returned.
+  //
+  // split  — the split to process.
+  //          null when KEEP WHEN EMPTY is set and the source was empty.
+  virtual TableFunctionResult apply(const TableSplitHandlePtr& split) = 0;
+
+ protected:
+  velox::memory::MemoryPool* pool_;
+  velox::HashStringAllocator* allocator_;
+};
+```
+
+#### TableFunctionResult
 
 Both processor types return `TableFunctionResult` from every `apply()` call.
 
@@ -266,484 +428,6 @@ class TableFunctionResult {
   State state() const;
   const std::vector<velox::VectorPtr>& outputVectors() const;
 };
-```
-
----
-
-### 5. Execution Processors
-
-#### 5a. TableFunctionDataProcessor
-
-Used when the function consumes one or more table arguments (set semantics).
-One processor instance is created per partition.
-
-```cpp
-// presto_cpp/main/tvf/spi/TableFunction.h
-
-class TableFunctionDataProcessor {
- public:
-  virtual ~TableFunctionDataProcessor() = default;
-
-  // Called repeatedly until kFinished is returned.
-  //
-  // input  — one RowVectorPtr per table argument, in declaration order.
-  //          Each vector contains only the columns listed in requiredColumns_.
-  //          An empty vector (zero rows) means the source is not yet ready.
-  //          A null pointer means all sources are exhausted.
-  virtual TableFunctionResult apply(
-      const std::vector<velox::RowVectorPtr>& input) = 0;
-
- protected:
-  velox::memory::MemoryPool* pool_;
-  velox::HashStringAllocator* allocator_;
-};
-```
-
-#### 5b. TableFunctionSplitProcessor
-
-Used for leaf functions that generate data from scratch (no table inputs).
-One processor instance is created per split.
-
-```cpp
-class TableFunctionSplitProcessor {
- public:
-  virtual ~TableFunctionSplitProcessor() = default;
-
-  // Called repeatedly until kFinished is returned.
-  //
-  // split  — the split to process.
-  //          null when KEEP WHEN EMPTY is set and the source was empty.
-  virtual TableFunctionResult apply(const TableSplitHandlePtr& split) = 0;
-
- protected:
-  velox::memory::MemoryPool* pool_;
-  velox::HashStringAllocator* allocator_;
-};
-```
-
----
-
-### 6. The TableFunction Factory and Registration
-
-`TableFunction` is a static factory/registry. Use `registerTableFunction()` to
-register a function at startup.
-
-```cpp
-// presto_cpp/main/tvf/spi/TableFunction.h
-
-// Callback types supplied at registration.
-using TableFunctionAnalyzer =
-    std::function<TableFunctionAnalysis(
-        const std::unordered_map<std::string, std::shared_ptr<Argument>>&)>;
-
-using TableFunctionSplitGenerator =
-    std::function<std::vector<TableSplitHandlePtr>(
-        const TableFunctionHandlePtr&)>;
-
-using TableFunctionDataProcessorFactory =
-    std::function<std::unique_ptr<TableFunctionDataProcessor>(
-        const TableFunctionHandlePtr&,
-        velox::memory::MemoryPool*,
-        velox::HashStringAllocator*)>;
-
-using TableFunctionSplitProcessorFactory =
-    std::function<std::unique_ptr<TableFunctionSplitProcessor>(
-        const TableSplitHandlePtr&,
-        velox::memory::MemoryPool*,
-        velox::HashStringAllocator*)>;
-
-struct TableFunctionEntry {
-  TableArgumentSpecList                argumentSpecs;
-  ReturnSpecPtr                        returnTypeSpec;
-  TableFunctionAnalyzer                analyzer;
-  TableFunctionSplitGenerator          splitGenerator;      // null for data processors
-  TableFunctionDataProcessorFactory    dataProcessorFactory;  // null for split processors
-  TableFunctionSplitProcessorFactory   splitProcessorFactory; // null for data processors
-};
-
-using TableFunctionMap = std::unordered_map<std::string, TableFunctionEntry>;
-
-class TableFunction {
- public:
-  static void registerTableFunction(
-      const std::string& name,
-      TableArgumentSpecList argumentSpecs,
-      ReturnSpecPtr returnTypeSpec,
-      TableFunctionAnalyzer analyzer,
-      TableFunctionSplitGenerator splitGenerator,
-      TableFunctionSplitProcessorFactory splitProcessorFactory);
-
-  static void registerTableFunction(
-      const std::string& name,
-      TableArgumentSpecList argumentSpecs,
-      ReturnSpecPtr returnTypeSpec,
-      TableFunctionAnalyzer analyzer,
-      TableFunctionDataProcessorFactory dataProcessorFactory);
-
-  static const TableFunctionMap& tableFunctions();
-};
-```
-
-All built-in functions are registered via:
-
-```cpp
-// presto_cpp/main/tvf/functions/TableFunctionsRegistration.h
-namespace facebook::presto::tvf {
-  void registerAllTableFunctions(const std::string& prefix = "");
-}
-```
-
----
-
-### 7. Planning Overview
-
-| Input shape | Operator used |
-|-------------|---------------|
-| No table inputs | `LeafTableFunctionOperator` (split-driven) |
-| Single table, row semantics | Planned as `Project`/`Filter` |
-| Single table, set semantics + `PARTITION BY` | Planned like a window function |
-| Multiple table inputs | Full outer join with row-number tracking, one window per input |
-
----
-
-## Part II — Examples
-
-### Example 1 — `sequence` (TableFunctionSplitProcessor)
-
-`sequence` generates a range of integers with no input table. Each split independently
-produces a contiguous sub-range, up to 1 000 000 values per split.
-
-#### SQL usage
-
-```sql
--- Ascending sequence
-SELECT * FROM TABLE(system.sequence(start => 1, stop => 10));
-
--- Descending with custom step
-SELECT * FROM TABLE(system.sequence(start => 1000000, stop => -2000000, step => -3));
-```
-
-#### Handles
-
-```cpp
-// SequenceHandle — coordinator context; drives split generation.
-class SequenceHandle : public TableFunctionHandle {
- public:
-  SequenceHandle(int64_t start, int64_t stop, int64_t step)
-      : start_(start), stop_(stop), step_(step) {}
-
-  int64_t start() const { return start_; }
-  int64_t stop()  const { return stop_;  }
-  int64_t step()  const { return step_;  }
-
-  folly::dynamic serialize() const override { /* start, stop, step */ }
-  std::string name() const override { return "SequenceHandle"; }
-
- private:
-  int64_t start_, stop_, step_;
-};
-
-// SequenceSplitHandle — per-split context; drives the processor.
-class SequenceSplitHandle : public TableSplitHandle {
- public:
-  SequenceSplitHandle(int64_t rangeStart, int64_t numSteps, int64_t step)
-      : rangeStart_(rangeStart), numSteps_(numSteps), step_(step) {}
-
-  int64_t rangeStart() const { return rangeStart_; }
-  int64_t numSteps()   const { return numSteps_;   }
-  int64_t step()       const { return step_;       }
-
-  folly::dynamic serialize() const override { /* ... */ }
-  std::string name() const override { return "SequenceSplitHandle"; }
-
- private:
-  int64_t rangeStart_, numSteps_, step_;
-};
-```
-
-#### Analyzer
-
-```cpp
-TableFunctionAnalysis sequenceAnalyzer(
-    const std::unordered_map<std::string, std::shared_ptr<Argument>>& args)
-{
-  auto& startArg = std::dynamic_pointer_cast<ScalarArgument>(args.at("start"));
-  auto& stopArg  = std::dynamic_pointer_cast<ScalarArgument>(args.at("stop"));
-  auto& stepArg  = std::dynamic_pointer_cast<ScalarArgument>(args.at("step"));
-
-  int64_t start = startArg->value()->as<velox::FlatVector<int64_t>>()->valueAt(0);
-  int64_t stop  = stopArg ->value()->as<velox::FlatVector<int64_t>>()->valueAt(0);
-  int64_t step  = stepArg ->value()->as<velox::FlatVector<int64_t>>()->valueAt(0);
-
-  VELOX_USER_CHECK_NE(step, 0, "Step must not be zero");
-  VELOX_USER_CHECK(
-      !(step > 0 && start > stop),
-      "Step must be negative for descending sequence");
-  VELOX_USER_CHECK(
-      !(step < 0 && start < stop),
-      "Step must be positive for ascending sequence");
-
-  TableFunctionAnalysis analysis;
-  // Return type is DescribedTable — no need to set returnType_ dynamically.
-  analysis.tableFunctionHandle_ = std::make_shared<SequenceHandle>(start, stop, step);
-  // No requiredColumns_ — leaf function has no table inputs.
-  return analysis;
-}
-```
-
-#### Split generator
-
-```cpp
-std::vector<TableSplitHandlePtr> sequenceSplitGenerator(
-    const TableFunctionHandlePtr& handle)
-{
-  auto& h = dynamic_cast<const SequenceHandle&>(*handle);
-  constexpr int64_t kMaxSplitSize = 1'000'000;
-
-  std::vector<TableSplitHandlePtr> splits;
-  int64_t current = h.start();
-  while (h.step() > 0 ? current <= h.stop() : current >= h.stop()) {
-    int64_t remaining = std::abs(h.stop() - current) / std::abs(h.step()) + 1;
-    int64_t numSteps  = std::min(remaining, kMaxSplitSize);
-    splits.push_back(
-        std::make_shared<SequenceSplitHandle>(current, numSteps, h.step()));
-    current += numSteps * h.step();
-  }
-  return splits;
-}
-```
-
-#### Split processor
-
-```cpp
-class SequenceSplitProcessor : public TableFunctionSplitProcessor {
- public:
-  TableFunctionResult apply(const TableSplitHandlePtr& splitHandle) override {
-    if (done_) {
-      return TableFunctionResult::finished();
-    }
-
-    auto& split = dynamic_cast<const SequenceSplitHandle&>(*splitHandle);
-
-    // First call — initialise cursor.
-    if (!initialised_) {
-      current_   = split.rangeStart();
-      remaining_ = split.numSteps();
-      step_      = split.step();
-      initialised_ = true;
-    }
-
-    // Fill one output batch (up to 1 024 rows).
-    auto out = velox::BaseVector::create<velox::FlatVector<int64_t>>(
-        velox::BIGINT(), 0, pool_);
-    int64_t count = std::min<int64_t>(remaining_, 1024);
-    out->resize(count);
-    for (int64_t i = 0; i < count; ++i) {
-      out->set(i, current_);
-      current_ += step_;
-    }
-    remaining_ -= count;
-    done_ = (remaining_ == 0);
-
-    return TableFunctionResult::processed({out});
-  }
-
- private:
-  bool    initialised_ = false;
-  bool    done_        = false;
-  int64_t current_     = 0;
-  int64_t remaining_   = 0;
-  int64_t step_        = 1;
-};
-```
-
-#### Registration
-
-```cpp
-void registerSequence(const std::string& prefix) {
-  TableFunction::registerTableFunction(
-      prefix + "sequence",
-      {
-        std::make_shared<ScalarArgumentSpecification>("start", /*required=*/false,
-            velox::variant(int64_t{0})),
-        std::make_shared<ScalarArgumentSpecification>("stop",  /*required=*/true),
-        std::make_shared<ScalarArgumentSpecification>("step",  /*required=*/false,
-            velox::variant(int64_t{1})),
-      },
-      std::make_shared<DescribedTableReturnTypeSpecification>(
-          std::make_shared<Descriptor>(
-              std::vector<std::string>{"sequence_value"},
-              std::vector<velox::TypePtr>{velox::BIGINT()})),
-      sequenceAnalyzer,
-      sequenceSplitGenerator,
-      [](const TableSplitHandlePtr& /*split*/, velox::memory::MemoryPool* pool,
-         velox::HashStringAllocator* alloc) {
-        auto p = std::make_unique<SequenceSplitProcessor>();
-        p->pool_ = pool; p->allocator_ = alloc;
-        return p;
-      });
-}
-```
-
-#### Execution flow
-
-```
-Coordinator
-  sequenceAnalyzer(args)       → SequenceHandle{start, stop, step}
-  sequenceSplitGenerator(h)    → [SplitHandle(0..1M), SplitHandle(1M+1..2M), …]
-
-Worker (one SequenceSplitProcessor per split)
-  loop: processor.apply(splitHandle)
-    → TableFunctionResult::processed({batch})   // up to 1 024 rows
-    → TableFunctionResult::finished()           // split complete
-```
-
----
-
-### Example 2 — `exclude_columns` (TableFunctionDataProcessor)
-
-`exclude_columns` accepts an input table and a descriptor of columns to remove.
-It uses `TableFunctionDataProcessor` because it processes rows from an input relation.
-
-#### SQL usage
-
-```sql
--- Return all columns from 'orders' except 'clerk' and 'comment'
-SELECT * FROM TABLE(
-    system.exclude_columns(
-        input   => TABLE(SELECT * FROM orders),
-        columns => DESCRIPTOR(clerk, comment)
-    )
-);
-```
-
-#### Handle
-
-```cpp
-class ExcludeColumnsHandle : public TableFunctionHandle {
- public:
-  folly::dynamic serialize() const override { return folly::dynamic::object(); }
-  std::string name() const override { return "ExcludeColumnsHandle"; }
-};
-```
-
-#### Analyzer
-
-```cpp
-TableFunctionAnalysis excludeColumnsAnalyzer(
-    const std::unordered_map<std::string, std::shared_ptr<Argument>>& args)
-{
-  auto inputArg = std::dynamic_pointer_cast<TableArgument>(args.at("input"));
-  auto colsArg  = std::dynamic_pointer_cast<DescriptorArgument>(args.at("columns"));
-
-  const auto& desc = colsArg->descriptor();
-
-  // Descriptor must contain names only — no types.
-  VELOX_USER_CHECK(
-      desc.types().empty(),
-      "Column types must not be specified in the COLUMNS descriptor");
-
-  // Build set of excluded names (case-insensitive).
-  std::unordered_set<std::string> excluded;
-  for (const auto& name : desc.names()) {
-    excluded.insert(folly::toLower(name));
-  }
-
-  // Determine which input column indexes to keep.
-  const auto& inputType = inputArg->rowType();
-  std::vector<int> keptIndexes;
-  for (int i = 0; i < inputType->size(); ++i) {
-    if (!excluded.count(folly::toLower(inputType->nameOf(i)))) {
-      keptIndexes.push_back(i);
-    }
-  }
-
-  VELOX_USER_CHECK(!keptIndexes.empty(), "All columns would be excluded");
-
-  TableFunctionAnalysis analysis;
-  // OnlyPassThrough — no new columns; no need to set returnType_.
-  // requiredColumns_ tells the optimizer to project away excluded columns.
-  analysis.requiredColumns_["input"]    = keptIndexes;
-  analysis.tableFunctionHandle_         = std::make_shared<ExcludeColumnsHandle>();
-  return analysis;
-}
-```
-
-#### Data processor
-
-Because the optimizer projects away excluded columns before rows reach the processor
-(via `requiredColumns_`), the processor simply forwards each batch unchanged.
-
-```cpp
-class ExcludeColumnsDataProcessor : public TableFunctionDataProcessor {
- public:
-  TableFunctionResult apply(
-      const std::vector<velox::RowVectorPtr>& input) override
-  {
-    // null input → all sources exhausted.
-    if (input.empty() || input[0] == nullptr) {
-      return TableFunctionResult::finished();
-    }
-
-    const auto& batch = input[0];  // single table argument: INPUT
-
-    // Zero-row batch → source not yet ready; signal we consumed the slot.
-    if (batch->size() == 0) {
-      return TableFunctionResult::processed({});
-    }
-
-    // Excluded columns already stripped by the engine; forward as-is.
-    // pass-through columns are implicit — OnlyPassThrough return type.
-    return TableFunctionResult::processed(
-        {batch->childAt(0), batch->childAt(1) /*, … */});
-  }
-};
-```
-
-#### Registration
-
-```cpp
-void registerExcludeColumns(const std::string& prefix) {
-  auto inputSpec = std::make_shared<TableArgumentSpecification>(
-      "input", /*required=*/true);
-  inputSpec->passThroughColumns = true;
-  // keepWhenEmpty = true: invoke the processor even on empty input.
-  inputSpec->pruneWhenEmpty = false;
-
-  TableFunction::registerTableFunction(
-      prefix + "exclude_columns",
-      {
-        inputSpec,
-        std::make_shared<DescriptorArgumentSpecification>("columns", /*required=*/true),
-      },
-      std::make_shared<OnlyPassThroughReturnTypeSpecification>(),
-      excludeColumnsAnalyzer,
-      [](const TableFunctionHandlePtr& /*handle*/,
-         velox::memory::MemoryPool* pool,
-         velox::HashStringAllocator* alloc) {
-        auto p = std::make_unique<ExcludeColumnsDataProcessor>();
-        p->pool_ = pool; p->allocator_ = alloc;
-        return p;
-      });
-}
-```
-
-#### Execution flow
-
-```
-Coordinator
-  excludeColumnsAnalyzer(args)
-    → requiredColumns_["input"] = [0, 1, 3, 4]   // columns 2 and 5 excluded
-    → ExcludeColumnsHandle{}
-
-Planner
-  Inserts a Project before the TVF operator that strips excluded columns.
-
-Worker (one ExcludeColumnsDataProcessor per partition)
-  loop: processor.apply(input)
-    batch has rows  → TableFunctionResult::processed(batch)   // forward
-    batch is empty  → TableFunctionResult::processed({})      // wait
-    input is null   → TableFunctionResult::finished()
 ```
 
 ---
