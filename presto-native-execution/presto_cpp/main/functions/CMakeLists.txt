@@ -15,6 +15,7 @@ target_link_libraries(presto_function_metadata presto_common velox)
 
 add_subdirectory(dynamic_registry)
 add_subdirectory(theta_sketch)
+add_subdirectory(bloom_filter)
 
 if(PRESTO_ENABLE_REMOTE_FUNCTIONS)
   add_subdirectory(remote)

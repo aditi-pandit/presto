@@ -10,21 +10,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-add_executable(presto_theta_sketch_functions_test ThetaSketchAggregationTest.cpp)
+add_executable(
+  presto_bloom_filter_functions_test
+  BloomFilterAggregateFunctionTest.cpp
+  BloomFilterFunctionsTest.cpp
+)
 
 add_test(
-  NAME presto_theta_sketch_functions_test
-  COMMAND presto_theta_sketch_functions_test
+  NAME presto_bloom_filter_functions_test
+  COMMAND presto_bloom_filter_functions_test
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
 target_link_libraries(
-  presto_theta_sketch_functions_test
-  presto_theta_sketch_functions
-  velox
+  presto_bloom_filter_functions_test
+  presto_bloom_filter_functions
+  velox_exec
   velox_exec_test_lib
   velox_functions_aggregates_test_lib
   velox_functions_test_lib
   GTest::gtest
   GTest::gtest_main
+  GTest::gmock
+  GTest::gmock_main
 )
