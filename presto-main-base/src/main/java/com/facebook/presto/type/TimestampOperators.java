@@ -17,6 +17,7 @@ import com.facebook.presto.common.block.Block;
 import com.facebook.presto.common.function.SqlFunctionProperties;
 import com.facebook.presto.common.type.AbstractLongType;
 import com.facebook.presto.common.type.StandardTypes;
+import com.facebook.presto.common.type.TimeZoneKey;
 import com.facebook.presto.spi.PrestoException;
 import com.facebook.presto.spi.function.BlockIndex;
 import com.facebook.presto.spi.function.BlockPosition;
@@ -173,16 +174,21 @@ public final class TimestampOperators
     @SqlType(StandardTypes.TIMESTAMP_WITH_TIME_ZONE)
     public static long castToTimestampWithTimeZone(SqlFunctionProperties properties, @SqlType(StandardTypes.TIMESTAMP) long value)
     {
-        if (properties.isLegacyTimestamp()) {
-            return packDateTimeWithZone(value, properties.getTimeZoneKey());
-        }
-        else {
-            ISOChronology localChronology = getChronology(properties.getTimeZoneKey());
+        return toTimestampWithTimeZone(properties, value, properties.getTimeZoneKey());
+    }
 
-            // This cast does treat TIMESTAMP as wall time in session TZ. This means that in order to get
-            // its UTC representation we need to shift the value by the offset of TZ.
-            return packDateTimeWithZone(localChronology.getZone().convertLocalToUTC(value, false), properties.getTimeZoneKey());
+    /**
+     * Attaches {@code zoneKey} to a TIMESTAMP. Shared by the cast, which uses the session zone,
+     * and with_timezone, which takes the zone as an argument.
+     */
+    public static long toTimestampWithTimeZone(SqlFunctionProperties properties, long value, TimeZoneKey zoneKey)
+    {
+        if (properties.isLegacyTimestamp()) {
+            return packDateTimeWithZone(value, zoneKey);
         }
+        // Non-legacy TIMESTAMP is wall time in zoneKey. This means that in order to get
+        // its UTC representation we need to shift the value by the offset of that zone.
+        return packDateTimeWithZone(getChronology(zoneKey).getZone().convertLocalToUTC(value, false), zoneKey);
     }
 
     @ScalarOperator(CAST)

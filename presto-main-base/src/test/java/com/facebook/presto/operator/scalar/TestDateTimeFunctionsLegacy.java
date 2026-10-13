@@ -19,6 +19,7 @@ import com.facebook.presto.common.type.TimestampType;
 import org.joda.time.DateTime;
 import org.testng.annotations.Test;
 
+import static com.facebook.presto.common.type.BooleanType.BOOLEAN;
 import static com.facebook.presto.common.type.TimestampWithTimeZoneType.TIMESTAMP_WITH_TIME_ZONE;
 import static com.facebook.presto.common.type.VarcharType.VARCHAR;
 import static com.facebook.presto.common.type.VarcharType.createVarcharType;
@@ -64,5 +65,15 @@ public class TestDateTimeFunctionsLegacy
             localAssertion.assertFunctionString("CURRENT_TIMESTAMP", TIMESTAMP_WITH_TIME_ZONE, "2017-03-01 14:30:00.000 " + DATE_TIME_ZONE.getID());
             localAssertion.assertFunctionString("NOW()", TIMESTAMP_WITH_TIME_ZONE, "2017-03-01 14:30:00.000 " + DATE_TIME_ZONE.getID());
         }
+    }
+
+    @Test
+    public void testWithTimezone()
+    {
+        // Legacy TIMESTAMP is an instant in the session zone (Pacific/Apia, UTC+14 in January 2020),
+        // so the result keeps the instant and only the display zone changes.
+        assertFunctionString("with_timezone(TIMESTAMP '2020-01-01 10:00:00.123', 'America/New_York')", TIMESTAMP_WITH_TIME_ZONE, "2019-12-31 15:00:00.123 America/New_York");
+        assertFunctionString("with_timezone(TIMESTAMP '2020-01-01 10:00:00', 'UTC')", TIMESTAMP_WITH_TIME_ZONE, "2019-12-31 20:00:00.000 UTC");
+        assertFunction("to_unixtime(with_timezone(TIMESTAMP '2020-01-01 10:00:00', 'America/New_York')) = to_unixtime(TIMESTAMP '2020-01-01 10:00:00')", BOOLEAN, true);
     }
 }

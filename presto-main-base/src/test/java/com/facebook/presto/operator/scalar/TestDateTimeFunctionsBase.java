@@ -351,6 +351,15 @@ public abstract class TestDateTimeFunctionsBase
     }
 
     @Test
+    public void testWithTimezoneInvalidArguments()
+    {
+        assertNotSupported("with_timezone(TIMESTAMP '2020-01-01 10:00:00', 'Invalid/Zone')", "Time zone not supported: Invalid/Zone");
+        assertInvalidFunction("with_timezone(TIMESTAMP '2020-01-01 10:00:00', '')", "Zone id is an empty string");
+        assertFunction("with_timezone(CAST(NULL AS TIMESTAMP), 'UTC')", TIMESTAMP_WITH_TIME_ZONE, null);
+        assertFunction("with_timezone(TIMESTAMP '2020-01-01 10:00:00', CAST(NULL AS VARCHAR))", TIMESTAMP_WITH_TIME_ZONE, null);
+    }
+
+    @Test
     public void testPartFunctions()
     {
         assertFunction("millisecond(" + TIMESTAMP_LITERAL + ")", BIGINT, (long) TIMESTAMP.getMillisOfSecond());

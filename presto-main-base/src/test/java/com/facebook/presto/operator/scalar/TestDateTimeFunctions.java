@@ -19,6 +19,7 @@ import com.facebook.presto.common.type.TimestampType;
 import org.joda.time.DateTime;
 import org.testng.annotations.Test;
 
+import static com.facebook.presto.common.type.DoubleType.DOUBLE;
 import static com.facebook.presto.common.type.TimestampWithTimeZoneType.TIMESTAMP_WITH_TIME_ZONE;
 import static com.facebook.presto.common.type.VarcharType.createVarcharType;
 
@@ -65,6 +66,21 @@ public class TestDateTimeFunctions
             localAssertion.assertFunctionString("CURRENT_TIMESTAMP", TIMESTAMP_WITH_TIME_ZONE, "2017-03-01 14:30:00.000 " + DATE_TIME_ZONE.getID());
             localAssertion.assertFunctionString("NOW()", TIMESTAMP_WITH_TIME_ZONE, "2017-03-01 14:30:00.000 " + DATE_TIME_ZONE.getID());
         }
+    }
+
+    @Test
+    public void testWithTimezone()
+    {
+        // TIMESTAMP is wall time, so the result keeps the wall time and gains the zone.
+        assertFunctionString("with_timezone(TIMESTAMP '2020-01-01 10:00:00.123', 'America/New_York')", TIMESTAMP_WITH_TIME_ZONE, "2020-01-01 10:00:00.123 America/New_York");
+        assertFunctionString("with_timezone(TIMESTAMP '2020-01-01 10:00:00', 'UTC')", TIMESTAMP_WITH_TIME_ZONE, "2020-01-01 10:00:00.000 UTC");
+        assertFunctionString("with_timezone(TIMESTAMP '2020-01-01 10:00:00', '+05:30')", TIMESTAMP_WITH_TIME_ZONE, "2020-01-01 10:00:00.000 +05:30");
+        assertFunction("to_unixtime(with_timezone(TIMESTAMP '2020-01-01 10:00:00', 'America/New_York'))", DOUBLE, 1577890800.0);
+
+        // Wall time in a DST gap does not exist and is moved forward by the gap.
+        assertFunctionString("with_timezone(TIMESTAMP '2020-03-08 02:30:00', 'America/New_York')", TIMESTAMP_WITH_TIME_ZONE, "2020-03-08 03:30:00.000 America/New_York");
+        // Wall time in a DST overlap resolves to the earlier (daylight) instant.
+        assertFunction("to_unixtime(with_timezone(TIMESTAMP '2020-11-01 01:30:00', 'America/New_York'))", DOUBLE, 1604208600.0);
     }
 
     @Test
