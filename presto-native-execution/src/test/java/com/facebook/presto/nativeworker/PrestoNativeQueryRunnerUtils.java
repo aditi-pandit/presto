@@ -181,6 +181,7 @@ public class PrestoNativeQueryRunnerUtils
                 this.extraProperties.putAll(ImmutableMap.of(
                         "regex-library", "RE2J",
                         "offset-clause-enabled", "true"));
+                this.hiveProperties.put("hive.allow-drop-table", "true");
                 this.security = "sql-standard";
                 this.useExternalWorkerLauncher = false;
             }

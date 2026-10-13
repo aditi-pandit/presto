@@ -415,14 +415,30 @@ public final class DateTimeFunctions
     }
 
     // Wall clock in the value's own zone. A legacy TIMESTAMP is an instant rendered in the session zone, so re-encode there.
-    private static long wallClockInOwnZone(SqlFunctionProperties properties, long timestampWithTimeZone)
-    {
+    private static long wallClockInOwnZone(SqlFunctionProperties properties, long timestampWithTimeZone) {
         long localMillis = getChronology(unpackZoneKey(timestampWithTimeZone)).getZone().convertUTCToLocal(unpackMillisUtc(timestampWithTimeZone));
         if (properties.isLegacyTimestamp()) {
             DateTimeZone sessionTimeZone = getChronology(properties.getTimeZoneKey()).getZone();
             return localMillis - sessionTimeZone.getOffsetFromLocal(localMillis);
         }
         return localMillis;
+    }
+
+    @Description("Constructs a timestamp with time zone from a timestamp and a time zone name")
+    @ScalarFunction("with_timezone")
+    @LiteralParameters("x")
+    @SqlType(StandardTypes.TIMESTAMP_WITH_TIME_ZONE)
+    public static long withTimezone(SqlFunctionProperties properties, @SqlType(StandardTypes.TIMESTAMP) long timestamp, @SqlType("varchar(x)") Slice zoneId)
+    {
+        try {
+            return TimestampOperators.toTimestampWithTimeZone(properties, timestamp, getTimeZoneKey(zoneId.toStringUtf8()));
+        }
+        catch (TimeZoneNotSupportedException e) {
+            throw new PrestoException(NOT_SUPPORTED, e.getMessage(), e);
+        }
+        catch (IllegalArgumentException e) {
+            throw new PrestoException(INVALID_FUNCTION_ARGUMENT, e.getMessage(), e);
+        }
     }
 
     @Description("truncate to the specified precision in the session timezone")

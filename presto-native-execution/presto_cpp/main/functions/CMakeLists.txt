@@ -18,6 +18,7 @@ target_link_libraries(
   velox_async_rpc_function_registry
 )
 
+add_subdirectory(datetime)
 add_subdirectory(dynamic_registry)
 add_subdirectory(kll_sketch)
 add_subdirectory(theta_sketch)

@@ -113,6 +113,19 @@ Date and Time Functions
 
     Returns ``timestamp`` as a UNIX timestamp.
 
+.. function:: with_timezone(timestamp, zone) -> timestamp with time zone
+
+    Returns a timestamp with time zone from ``timestamp`` and the time zone
+    name or offset ``zone``. ``timestamp`` is treated as wall time in ``zone``,
+    so the result keeps the same date and time fields::
+
+        SELECT with_timezone(TIMESTAMP '2020-01-01 10:00:00', 'America/New_York');
+        -- 2020-01-01 10:00:00.000 America/New_York
+
+    A wall time that falls in a daylight saving gap is moved forward by the
+    length of the gap. When ``legacy_timestamp`` is enabled, ``timestamp`` is
+    an instant, so the result keeps that instant and only the time zone changes.
+
 .. note:: The following SQL-standard functions do not use parenthesis:
 
     - ``current_date``

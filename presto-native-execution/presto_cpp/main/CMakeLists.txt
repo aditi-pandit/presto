@@ -67,6 +67,7 @@ target_link_libraries(
   presto_velox_plan_conversion
   presto_hive_functions
   presto_kll_sketch_functions
+  presto_datetime_functions
   presto_theta_sketch_functions
   velox
   ${RE2}
