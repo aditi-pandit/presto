@@ -24,6 +24,7 @@ target_link_libraries(
   velox
   velox_exec_test_lib
   velox_functions_aggregates_test_lib
+  velox_functions_test_lib
   GTest::gtest
   GTest::gtest_main
 )

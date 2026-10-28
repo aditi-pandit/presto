@@ -21,6 +21,7 @@ target_link_libraries(
 add_subdirectory(dynamic_registry)
 add_subdirectory(kll_sketch)
 add_subdirectory(theta_sketch)
+add_subdirectory(bloom_filter)
 
 if(PRESTO_ENABLE_REMOTE_FUNCTIONS)
   add_subdirectory(remote)
